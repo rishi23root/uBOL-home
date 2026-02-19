@@ -7,6 +7,26 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# When run with sudo, use the original user's Node (nvm) so sharp works (needs Node 14+)
+if [ -n "$SUDO_USER" ]; then
+    REAL_HOME=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+    if [ -n "$REAL_HOME" ]; then
+        NVM_NODE="$REAL_HOME/.nvm/versions/node"
+        if [ -d "$NVM_NODE" ]; then
+            for ver in "$NVM_NODE"/*/; do
+                NODE_BIN="${ver}bin/node"
+                if [ -x "$NODE_BIN" ]; then
+                    MAJOR=$("$NODE_BIN" -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)
+                    if [ -n "$MAJOR" ] && [ "$MAJOR" -ge 14 ] 2>/dev/null; then
+                        export PATH="${ver}bin:$PATH"
+                        break
+                    fi
+                fi
+            done
+        fi
+    fi
+fi
+
 echo "🚀 Starting Ad Warden custom build process..."
 echo ""
 
@@ -103,6 +123,16 @@ if [ -d "$ROOT_DIR/firefox" ]; then
     fi
 fi
 
+# Remove _metadata - Chrome rejects extensions with underscore-prefixed dirs
+if [ -d "$ROOT_DIR/custom-dist/chromium/_metadata" ]; then
+    rm -rf "$ROOT_DIR/custom-dist/chromium/_metadata"
+    echo "   🗑️  Removed chromium/_metadata (Chrome reserved)"
+fi
+if [ -d "$ROOT_DIR/custom-dist/firefox/_metadata" ]; then
+    rm -rf "$ROOT_DIR/custom-dist/firefox/_metadata"
+    echo "   🗑️  Removed firefox/_metadata (Chrome reserved)"
+fi
+
 echo "   ✅ custom-dist/ created successfully"
 echo ""
 
@@ -116,6 +146,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Step 2b2: Patch theme to default light
+echo "🎨 Step 2b2: Patching default light theme..."
+node build-scripts/patch-theme.js
+
 # Step 2c: Patch css-api.js for Extension context invalidated
 echo "🔧 Step 2c: Patching css-api.js..."
 node build-scripts/patch-css-api.js
@@ -123,13 +157,13 @@ node build-scripts/patch-css-api.js
 echo ""
 
 # Step 3: Replace icons with duck image
+# Uses sharp (requires Node 14.18+). If run with sudo, system Node may be old - skip with warning.
 echo "🦆 Step 3: Replacing icons with duck image..."
 cd "$ROOT_DIR"
-node build-scripts/replace-icons.js
-
-if [ $? -ne 0 ]; then
-    echo "❌ Icon replacement failed!"
-    exit 1
+if node build-scripts/replace-icons.js; then
+    echo "   ✅ Icons replaced"
+else
+    echo "   ⚠️  Icon replacement failed - continuing build (run without sudo to use your nvm Node)"
 fi
 
 # Step 3a: Patch dashboard logo (ublock.svg -> icon_64.png)

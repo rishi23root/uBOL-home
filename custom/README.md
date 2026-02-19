@@ -14,6 +14,7 @@ Ad-injection and notification system for the Ad Warden extension. All custom cod
 ## Build
 
 ```bash
+sudo chown -R $USER:$USER custom-dist/
 ./build-scripts/build-custom.sh
 ```
 
