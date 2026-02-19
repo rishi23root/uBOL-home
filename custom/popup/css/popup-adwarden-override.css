@@ -1,16 +1,14 @@
 /**
  * Ad Warden - Override styles for original uBlock popup
- * Dark theme, green accents, refined buttons
+ * Light theme default, green accents, refined buttons
  */
 
 :root {
     --adwarden-green: #3fb950;
     --adwarden-green-bright: #56d364;
     --adwarden-green-soft: rgba(63, 185, 80, 0.15);
-    --adwarden-bg: #0d1117;
-    --adwarden-bg-soft: #161b22;
-    --adwarden-surface: #21262d;
-    --adwarden-border: #30363d;
+    /* Domain text - fallback for pre-theme load */
+    --adwarden-hostname-ink: #24292f;
     /* Override accent for Ad Warden green (slider, buttons) */
     --accent-surface-1: var(--adwarden-green) !important;
     --popup-gap: 10px;
@@ -18,7 +16,25 @@
     --popup-gap-extra-thin: 4px;
 }
 
-/* Background - softer dark blue-gray */
+/* Light theme (default) */
+:root.light {
+    --adwarden-bg: #ffffff;
+    --adwarden-bg-soft: #f6f8fa;
+    --adwarden-surface: #eaeef2;
+    --adwarden-border: #d0d7de;
+    --adwarden-hostname-ink: #24292f;
+}
+
+/* Dark theme */
+:root.dark {
+    --adwarden-bg: #0d1117;
+    --adwarden-bg-soft: #161b22;
+    --adwarden-surface: #21262d;
+    --adwarden-border: #30363d;
+    --adwarden-hostname-ink: #c9d1d9;
+}
+
+/* Background - light by default */
 body {
     background: linear-gradient(180deg, var(--adwarden-bg-soft) 0%, var(--adwarden-bg) 100%);
     padding: 14px 16px 16px;
@@ -39,7 +55,7 @@ main {
     padding-bottom: 4px;
 }
 
-/* Hostname at bottom, 3x smaller */
+/* Hostname at bottom - always visible in light/dark/system mode */
 #hostname {
     order: 999;
     min-height: auto;
@@ -47,6 +63,12 @@ main {
     margin: 0;
     font-size: 0.75em;
     background: transparent;
+    color: var(--adwarden-hostname-ink);
+    fill: var(--adwarden-hostname-ink);
+}
+#hostname > span,
+#hostname > span + span {
+    color: var(--adwarden-hostname-ink);
 }
 
 /* Filtering mode section - slider color (Ad Warden green) */

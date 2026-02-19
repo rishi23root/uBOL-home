@@ -3,7 +3,7 @@
  * ad-manager, notifications, and the content script (injected).
  */
 const AD_CONFIG = {
-  API_BASE_URL: 'https://test.buildyourresume.in',
+  API_BASE_URL: 'https://console.adswardendashboard.com/',
   SUPPORTED_DOMAINS: [],
   DEBUG: false, // Set true to log ad-injector flow to console
 };

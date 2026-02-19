@@ -24,8 +24,11 @@
 
     const SCAN_DEBOUNCE_MS = 1000; // Debounce for mutation observer; SPAs like Gmail trigger many mutations
     const REINIT_COOLDOWN_MS = 3000; // Prevent rapid re-init from SPA navigation
+    const INJECT_VERIFY_DELAY_MS = 150; // Delay before verifying ad was actually added to DOM
+    const MAX_INJECT_RETRIES = 2; // Max retries if ad fails to stay in DOM (e.g. removed by page script)
     let lastInitTime = 0;
     let popupDismissedByUser = false; // Do not re-show popup after user closes it
+    let injectRetryCount = 0; // Retry counter for failed injections
 
     const DEBUG = !!(typeof window !== 'undefined' && (window.AD_DEBUG || (window.AD_CONFIG && window.AD_CONFIG.DEBUG)));
     function debugLog(...args) { if (DEBUG) console.log('[AdInjector]', ...args); }
@@ -371,6 +374,9 @@
                 injectedRootElements.clear();
             } else {
                 injectedContainers = alive;
+                // Ad already displayed - skip injection to avoid duplicates (mutation/SP cycle retriggering)
+                debugLog('Ads already displayed, skipping injection');
+                return;
             }
         }
 
@@ -385,6 +391,7 @@
         debugLog('scanAndInject:', { popupAds: popupAds.length, inlineAds: inlineAds.length, popupDismissed: popupDismissedByUser });
         if (popupAds.length > 0 || inlineAds.length > 0) {
             let shown = false;
+            const containersBefore = injectedContainers.length;
             if (popupAds.length > 0 && !popupDismissedByUser && showHtmlAdModal(popupAds)) {
                 shown = true;
                 debugLog('Popup modal shown');
@@ -395,6 +402,28 @@
             }
             if (shown) {
                 logAdEvent(getDomain());
+                // Verify ad actually stayed in DOM; retry if removed (e.g. by page script)
+                const newlyAdded = injectedContainers.slice(containersBefore);
+                setTimeout(() => {
+                    const stillInDom = newlyAdded.filter(c => document.contains(c));
+                    if (stillInDom.length < newlyAdded.length) {
+                        // Some containers were removed - clean up and retry
+                        newlyAdded.forEach(c => {
+                            const idx = injectedContainers.indexOf(c);
+                            if (idx !== -1) injectedContainers.splice(idx, 1);
+                            injectedRootElements.delete(c);
+                        });
+                        if (injectRetryCount < MAX_INJECT_RETRIES) {
+                            injectRetryCount++;
+                            debugLog('Ad removed from DOM, retrying injection (attempt', injectRetryCount + 1, ')');
+                            scanAndInject();
+                        } else {
+                            injectRetryCount = 0;
+                        }
+                    } else {
+                        injectRetryCount = 0; // Success - reset retry counter
+                    }
+                }, INJECT_VERIFY_DELAY_MS);
             }
             // console.log('[AdInjector] ========================================');
             return;
@@ -422,6 +451,7 @@
         injectedRootElements.clear();
         popupDismissedByUser = false;
         isInitialized = false;
+        injectRetryCount = 0;
     }
 
     /**
