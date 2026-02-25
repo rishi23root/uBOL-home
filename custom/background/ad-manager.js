@@ -9,6 +9,11 @@
         (typeof window !== 'undefined' && window.AD_CONFIG) ||
         { SUPPORTED_DOMAINS: [] };
 
+    function apiUrl(path) {
+        const base = (CONFIG.API_BASE_URL || '').replace(/\/+$/, '');
+        return base + path;
+    }
+
     // Track injected tabs to prevent duplicate injection
     const injectedTabs = new Set(); // tabId -> true
     // Pre-fetched ads for reuse by GET_ADS (avoids duplicate API calls)
@@ -77,7 +82,7 @@
                 console.warn('[AdManager] API_BASE_URL not set, skipping target domains fetch');
                 return CONFIG.SUPPORTED_DOMAINS || [];
             }
-            const url = `${CONFIG.API_BASE_URL}/api/extension/domains`;
+            const url = apiUrl('/api/extension/domains');
             console.log('[AdManager] Requesting target domains from backend:', url);
 
             const response = await fetch(url).catch((err) => {
@@ -119,7 +124,7 @@
                 return [];
             }
             const visitorId = await getVisitorId();
-            const url = `${CONFIG.API_BASE_URL}/api/extension/ad-block`;
+            const url = apiUrl('/api/extension/ad-block');
             console.log(`[AdManager] Targeted URL (fetch): domain=${domain}, api=${url}`);
 
             let response;

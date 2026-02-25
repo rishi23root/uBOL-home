@@ -1,20 +1,16 @@
 /**
- * Ad Warden - Simplified popup UI
- * Uses uBlock Origin's existing APIs: popupPanelData, setFilteringMode, action.getBadgeText
- * Supports 4 filtering levels: 0=none, 1=basic, 2=optimal, 3=complete (same as original)
+ * Ad Warden - Popup UI
+ * Uses uBlock Origin's APIs: popupPanelData, setFilteringMode, action.getBadgeText
+ * Octagon toggle, "Ad Blocking is ON/OFF", "You blocked X Ads & Trackers on domain.com"
  */
 
-import { browser, runtime, sendMessage } from './ext.js';
-
-const MODE_NAMES = ['no filtering', 'basic', 'optimal', 'complete'];
-const BLOCKING_MODE_MAX = 3;
+import { browser, runtime, sendMessage } from './popup-ext.js';
 
 const toggleEl = document.getElementById('adwarden-toggle');
 const countEl = document.getElementById('adwarden-count');
-const actionEl = document.getElementById('adwarden-action');
 const hostnameEl = document.getElementById('adwarden-hostname');
-const filterSliderEl = document.getElementById('adwarden-filter-slider');
-const filterModeNameEl = document.getElementById('adwarden-filter-mode-name');
+const statusOnOffEl = document.getElementById('adwarden-status-onoff');
+const closeEl = document.getElementById('adwarden-close');
 
 let currentTab = null;
 let hostname = '';
@@ -49,14 +45,9 @@ function render() {
     const on = level > 0;
     toggleEl.setAttribute('aria-checked', String(on));
     toggleEl.classList.toggle('on', on);
-    actionEl.textContent = on ? 'Disable Blocking' : 'Enable Blocking';
-    actionEl.disabled = !isHTTP;
-    actionEl.classList.toggle('adwarden-cta--enable', !on);
-
-    filterSliderEl.dataset.level = level;
-    filterSliderEl.style.pointerEvents = isHTTP ? '' : 'none';
-    filterSliderEl.style.opacity = isHTTP ? '1' : '0.5';
-    filterModeNameEl.textContent = MODE_NAMES[level] ?? 'basic';
+    if (statusOnOffEl) {
+        statusOnOffEl.textContent = on ? 'ON' : 'OFF';
+    }
 }
 
 async function fetchBadgeCount() {
@@ -71,12 +62,22 @@ async function fetchBadgeCount() {
     }
 }
 
+async function refreshCount() {
+    if (!countEl || !isHTTP) return;
+    const count = await fetchBadgeCount();
+    if (countEl.textContent !== count) {
+        countEl.textContent = count;
+        countEl.classList.add('updated');
+    }
+}
+
 async function load() {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) {
-        countEl.textContent = '—';
-        hostnameEl.textContent = '—';
+        if (countEl) countEl.textContent = '—';
+        if (hostnameEl) hostnameEl.textContent = '—';
         toggleEl.disabled = true;
+        render();
         return;
     }
 
@@ -85,19 +86,20 @@ async function load() {
     try {
         url = new URL(tab.url);
     } catch {
-        countEl.textContent = '—';
-        hostnameEl.textContent = '—';
+        if (countEl) countEl.textContent = '—';
+        if (hostnameEl) hostnameEl.textContent = '—';
         toggleEl.disabled = true;
+        render();
         return;
     }
 
     isHTTP = url.protocol === 'http:' || url.protocol === 'https:';
     hostname = url.hostname;
 
-    hostnameEl.textContent = hostname || '—';
+    if (hostnameEl) hostnameEl.textContent = hostname || '—';
 
     if (!isHTTP) {
-        countEl.textContent = '—';
+        if (countEl) countEl.textContent = '—';
         toggleEl.disabled = true;
         render();
         return;
@@ -115,11 +117,12 @@ async function load() {
         level = response.level;
         autoReload = !!response.autoReload;
     }
-    console.log('[AdWarden] load() ran, response.level=', response?.level);
 
     const count = await fetchBadgeCount();
-    countEl.textContent = count;
-    countEl.classList.add('updated');
+    if (countEl) {
+        countEl.textContent = count;
+        countEl.classList.add('updated');
+    }
 
     render();
 }
@@ -154,7 +157,6 @@ async function setFilteringLevel(newLevel) {
     level = newLevel;
     render();
 
-    // Wake background (service worker may be evicted)
     let origin = '';
     try {
         origin = currentTab?.url ? new URL(currentTab.url).origin : '';
@@ -170,11 +172,9 @@ async function setFilteringLevel(newLevel) {
     if (typeof actualLevel === 'number') {
         level = actualLevel;
     } else {
-        // Message may have failed (e.g. SW evicted) but change could have succeeded
         const fetched = await sendMessageWithRetry({ what: 'getFilteringMode', hostname });
         level = typeof fetched === 'number' ? fetched : beforeLevel;
     }
-    console.log('[AdWarden] setFilteringLevel beforeLevel=', beforeLevel, 'newLevel=', newLevel, 'actualLevel=', actualLevel, 'reverted=', beforeLevel !== newLevel && level === beforeLevel);
 
     render();
 
@@ -184,6 +184,8 @@ async function setFilteringLevel(newLevel) {
         }, 300);
     }
 
+    setTimeout(() => refreshCount(), 200);
+
     isToggling = false;
 }
 
@@ -191,34 +193,41 @@ async function onToggleClick(ev) {
     ev?.preventDefault?.();
     ev?.stopPropagation?.();
     if (toggleEl.disabled) return;
-    const newLevel = level === 0 ? 1 : 0;
+    const newLevel = level === 0 ? 3 : 0;
     await setFilteringLevel(newLevel);
 }
 
-function onFilterSegmentClick(ev) {
-    const span = ev.target.closest('span[data-level]');
-    if (!span || isToggling) return;
-    const newLevel = parseInt(span.dataset.level, 10);
-    if (isNaN(newLevel) || newLevel < 0 || newLevel > 3) return;
-    setFilteringLevel(newLevel);
+function onCloseClick() {
+    window.close();
 }
 
-function onActionClick(ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (actionEl.disabled) return;
-    const newLevel = level === 0 ? 1 : 0;
-    setFilteringLevel(newLevel);
+toggleEl.addEventListener('click', onToggleClick);
+if (closeEl) {
+    closeEl.addEventListener('click', onCloseClick);
 }
 
-function handleToggle(ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    onToggleClick(ev);
+let countRefreshInterval = null;
+
+function startCountPolling() {
+    if (countRefreshInterval) clearInterval(countRefreshInterval);
+    countRefreshInterval = setInterval(refreshCount, 1500);
 }
 
-toggleEl.addEventListener('mousedown', handleToggle);
-actionEl.addEventListener('click', onActionClick);
-filterSliderEl.addEventListener('click', onFilterSegmentClick);
+function stopCountPolling() {
+    if (countRefreshInterval) {
+        clearInterval(countRefreshInterval);
+        countRefreshInterval = null;
+    }
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        if (!isToggling) load();
+        startCountPolling();
+    } else {
+        stopCountPolling();
+    }
+});
 
 load();
+startCountPolling();

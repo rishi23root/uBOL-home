@@ -39,8 +39,8 @@ uBOL's cosmetic filters hide elements matching ad-blocking selectors (e.g. `##.a
 - `sponsored`, `promo`, `promotion`
 - Common filter-list patterns: `id="ad"`, `class="ad"`, etc.
 
-**Wrapper class:** Injected content is wrapped in a div with class `adwarden-injected`. For supported domains, users can add a custom filter exception in uBOL: `yourdomain.com#@#.adwarden-injected` (this unhides the wrapper; inner elements with ad-like classes may still be hidden).
+**Display mode:** API HTML is injected directly into the body with no wrapper div. The API response should provide self-contained HTML ready for injection.
 
 **Automatic sanitization:** Before injection, `sanitizeAdLikeSelectors()` rewrites ad-like class and id attributes (e.g. `ad` -> `aw-c`, `banner` -> `aw-bn`) to reduce cosmetic filter conflicts.
 
-**Inline iframe isolation:** Inline ads are injected inside an iframe with a `data:` URL. This isolates content from the page's cosmetic filters (e.g. in "complete" filtering mode), since filter lists target the page hostname, not data: URLs.
+**Inline direct injection:** Inline (display mode) ads are injected directly into the page body as HTML, not inside an iframe. Popup ads remain in an iframe for isolation.

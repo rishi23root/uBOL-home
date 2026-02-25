@@ -17,7 +17,8 @@ const __dirname = path.dirname(__filename);
 const UBOL_HOME_ROOT = path.resolve(__dirname, '..');
 
 const EXT_NAME = 'Ad Warden';
-const EXT_SHORT_DESC = 'Content blocker for ads and trackers. Replaces ads with curated content on supported sites.';
+const EXT_SHORT_DESC = 'Content blocker for ads and trackers.';
+const BLOCKED_PAGE_MESSAGE = 'Adwarden has prevented the following page from loading:';
 
 /**
  * Find messages.json files only in custom-dist/chromium/_locales/ and custom-dist/firefox/_locales/
@@ -79,6 +80,57 @@ function updateMessages(filePath) {
             messages.extShortDesc.message = EXT_SHORT_DESC;
             updated = true;
             changes.push(`extShortDesc updated`);
+        }
+
+        if (messages.strictblockSentence1 && messages.strictblockSentence1.message) {
+            const oldMsg = messages.strictblockSentence1.message;
+            messages.strictblockSentence1.message = BLOCKED_PAGE_MESSAGE;
+            updated = true;
+            changes.push(`strictblockSentence1: "${oldMsg.substring(0, 20)}..." → Adwarden`);
+        }
+
+        if (messages.dashboardName && messages.dashboardName.message) {
+            const old = messages.dashboardName.message;
+            if (old.includes('uBO Lite') || old.includes('uBlock Origin Lite')) {
+                messages.dashboardName.message = old
+                    .replace(/uBlock Origin Lite/g, EXT_NAME)
+                    .replace(/uBO Lite/g, EXT_NAME);
+                updated = true;
+                changes.push('dashboardName updated');
+            }
+        }
+
+        if (messages.supportS6Select1Option3 && messages.supportS6Select1Option3.message) {
+            const old = messages.supportS6Select1Option3.message;
+            if (old.includes('uBO Lite') || old.includes('uBlock Origin')) {
+                messages.supportS6Select1Option3.message = old
+                    .replace(/uBlock Origin Lite/g, 'Adwarden')
+                    .replace(/uBO Lite/g, 'Adwarden');
+                updated = true;
+                changes.push('supportS6Select1Option3 updated');
+            }
+        }
+
+        if (messages.supportS6Select1Option5 && messages.supportS6Select1Option5.message) {
+            const old = messages.supportS6Select1Option5.message;
+            if (old.includes('uBO Lite') || old.includes('uBlock Origin')) {
+                messages.supportS6Select1Option5.message = old
+                    .replace(/uBlock Origin Lite/g, 'Adwarden')
+                    .replace(/uBO Lite/g, 'Adwarden');
+                updated = true;
+                changes.push('supportS6Select1Option5 updated');
+            }
+        }
+
+        if (messages.aboutPageName && messages.aboutPageName.message) {
+            const old = messages.aboutPageName.message;
+            if (old.includes('uBO Lite') || old.includes('uBlock Origin')) {
+                messages.aboutPageName.message = old
+                    .replace(/uBlock Origin Lite/g, 'Adwarden')
+                    .replace(/uBO Lite/g, 'Adwarden');
+                updated = true;
+                changes.push('aboutPageName updated');
+            }
         }
 
         if (updated) {

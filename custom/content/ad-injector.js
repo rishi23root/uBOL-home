@@ -213,10 +213,11 @@
         if (withHtml.length === 0) return false;
         const adHtml = sanitizeAdLikeSelectors(withHtml[0].html.trim());
         // Wrap in full document so body/html exist; ad's position:relative/fixed will be relative to iframe
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">${adHtml}</body></html>`;
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{overflow-x:hidden;margin:0}</style></head><body>${adHtml}</body></html>`;
         const popup = document.createElement('div');
         popup.setAttribute(OBFUSCATED_ATTR, 'true');
-        popup.className = OBFUSCATED_HOST_CLASS + ' adwarden-injected';
+        popup.setAttribute('data-aw-inj', '');
+        popup.className = OBFUSCATED_HOST_CLASS + ' aw-injected';
         popup.style.cssText = `
             position: fixed;
             top: 0;
@@ -234,29 +235,31 @@
         const inner = document.createElement('div');
         inner.style.cssText = `
             position: relative;
+            display: flex;
+            flex-direction: column;
             min-width: 50vw;
             min-height: 50vh;
             width: 50vw;
             height: 50vh;
             max-width: 90vw;
             max-height: 90vh;
-            overflow: auto;
+            overflow: hidden;
             background: #fff;
             border-radius: 20px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.2);
             box-sizing: border-box;
-            padding: 40px 20px 24px 20px;
-            margin-bottom: 24px;
+            padding: 40px 20px 20px 20px;
         `;
         const iframe = document.createElement('iframe');
         iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         iframe.style.cssText = `
             display: block;
+            flex: 1;
+            min-height: 0;
             width: 100%;
-            height: calc(100% - 48px);
-            min-height: 200px;
             border: none;
             border-radius: 12px;
+            overflow-x: hidden;
         `;
         iframe.srcdoc = html;
         inner.appendChild(iframe);
@@ -324,8 +327,8 @@
     }
 
     /**
-     * Inject API-supplied HTML ads into body (non-popup / simple ads).
-     * Uses iframe with data: URL to isolate from page's cosmetic filters (complete mode).
+     * Inject API-supplied HTML ads into body (non-popup / display mode).
+     * HTML is added directly to the body with no wrapper div.
      * @param {Array} ads - Normalized ad objects with .html
      * @returns {boolean} true if any ad was injected
      */
@@ -335,25 +338,19 @@
             (a.displayAs !== 'popup' && a.type !== 'popup')
         );
         if (inlineAds.length === 0) return false;
+        let injected = false;
         for (const ad of inlineAds) {
             const html = sanitizeAdLikeSelectors(ad.html.trim());
-            const docHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0}</style></head><body>${html}</body></html>`;
-            const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(docHtml);
-            const wrapper = document.createElement('div');
-            wrapper.setAttribute(OBFUSCATED_ATTR, 'true');
-            wrapper.className = OBFUSCATED_HOST_CLASS + ' adwarden-injected';
-            wrapper.style.cssText = 'display:block !important;visibility:visible !important;min-height:100px;';
-            const iframe = document.createElement('iframe');
-            iframe.src = dataUrl;
-            iframe.style.cssText = 'display:block;width:100%;min-height:100px;border:none;';
-            iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-            wrapper.appendChild(iframe);
-            // Insert at top of body so ad is visible above the fold
-            document.body.insertBefore(wrapper, document.body.firstChild);
-            injectedContainers.push(wrapper);
-            injectedRootElements.add(wrapper);
+            const temp = document.createElement('template');
+            temp.innerHTML = html;
+            const nodes = Array.from(temp.content.childNodes);
+            if (nodes.length === 0) continue;
+            nodes.forEach(node => document.body.insertBefore(node, document.body.firstChild));
+            injectedContainers.push(...nodes);
+            nodes.forEach(n => injectedRootElements.add(n));
+            injected = true;
         }
-        return true;
+        return injected;
     }
 
     /**

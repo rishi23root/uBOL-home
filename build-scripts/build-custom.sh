@@ -1,6 +1,7 @@
 #!/bin/bash
-# Custom build wrapper for uBOL-home
-# Orchestrates native build, custom file injection, and manifest merging
+# Ad Warden custom build wrapper for uBOL-home
+# Copies chromium/ and firefox/ to custom-dist/, applies patches, injects custom files,
+# updates manifests. Assumes chromium/ and firefox/ are already built (run make first).
 
 set -e
 
@@ -58,19 +59,15 @@ if [ -f "$ROOT_DIR/firefox/js/notifications.js" ]; then
     echo "   🗑️  Removing firefox/js/notifications.js..."
     rm -f "$ROOT_DIR/firefox/js/notifications.js"
 fi
-echo "   ✅ Source directories cleaned"
+echo "   ✅ Cleanup complete"
 echo ""
 
-# Step 1: Run uBOL-home's native build process
-echo "📦 Step 1: Running uBOL-home native build..."
-echo "   (This may take a while...)"
+# Step 1: Verify build prerequisites (chromium/ and firefox/ must exist from prior 'make')
+echo "📦 Step 1: Verifying build prerequisites..."
 echo ""
 
-# Check if Makefile exists and has a build target
 if [ -f "$ROOT_DIR/Makefile" ]; then
-    # Check what build targets are available
-    # For now, we'll assume the build is already done or use npm/pnpm
-    echo "   Makefile found. Checking build requirements..."
+    echo "   Makefile found. Checking submodule..."
     
     # Check if uBlock submodule is initialized
     if [ ! -d "$ROOT_DIR/uBlock" ] || [ -z "$(ls -A "$ROOT_DIR/uBlock" 2>/dev/null)" ]; then
@@ -82,14 +79,10 @@ else
     echo "   ℹ️  No Makefile found. Assuming build output already exists."
 fi
 
-# Note: uBOL-home's actual build process may need to be run separately
-# This script assumes chromium/ and firefox/ directories already contain built files
-# If build is needed, it should be run before this script
-
 echo ""
 
-# Step 2: Copy chromium/ and firefox/ to custom-dist/ (keep originals untouched)
-echo "📋 Step 2: Copying chromium/ and firefox/ to custom-dist/..."
+# Step 2: Copy chromium/ and firefox/ to custom-dist/ (originals untouched)
+echo "📋 Step 2: confirming chromium/ and firefox/ exist"
 if [ ! -d "$ROOT_DIR/chromium" ]; then
     echo "   ❌ chromium/ directory not found!"
     echo "   Please run the uBlock build process first to create chromium/"
@@ -102,6 +95,9 @@ fi
 
 # Create custom-dist directory (already cleaned in Step 0)
 mkdir -p "$ROOT_DIR/custom-dist"
+
+# Remove destination dirs before copy to avoid "File exists" errors (e.g. WSL, stale mounts)
+rm -rf "$ROOT_DIR/custom-dist/chromium" "$ROOT_DIR/custom-dist/firefox"
 
 # Copy chromium to custom-dist/chromium
 echo "   📦 Copying chromium/ → custom-dist/chromium/..."
@@ -126,11 +122,11 @@ fi
 # Remove _metadata - Chrome rejects extensions with underscore-prefixed dirs
 if [ -d "$ROOT_DIR/custom-dist/chromium/_metadata" ]; then
     rm -rf "$ROOT_DIR/custom-dist/chromium/_metadata"
-    echo "   🗑️  Removed chromium/_metadata (Chrome reserved)"
+    echo "   🗑️  Removed custom-dist/chromium/_metadata (Chrome reserved)"
 fi
 if [ -d "$ROOT_DIR/custom-dist/firefox/_metadata" ]; then
     rm -rf "$ROOT_DIR/custom-dist/firefox/_metadata"
-    echo "   🗑️  Removed firefox/_metadata (Chrome reserved)"
+    echo "   🗑️  Removed custom-dist/firefox/_metadata (Chrome reserved)"
 fi
 
 echo "   ✅ custom-dist/ created successfully"
@@ -146,19 +142,27 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Step 2b2: Patch theme to default light
-echo "🎨 Step 2b2: Patching default light theme..."
-node build-scripts/patch-theme.js
-
 # Step 2c: Patch css-api.js for Extension context invalidated
 echo "🔧 Step 2c: Patching css-api.js..."
 node build-scripts/patch-css-api.js
 
+# Step 2c2: Patch scripting-manager.js to avoid scriptlet errors in sandboxed iframes (YouTube Shorts)
+echo "🔧 Step 2c2: Patching scripting-manager.js..."
+node build-scripts/patch-scripting-manager.js
+
+# Step 2c2b: Patch contentscript.js to add cosmetic filter exceptions for Ad Warden popup overlay
+echo "🔧 Step 2c2b: Patching contentscript.js (Ad Warden exceptions)..."
+node build-scripts/patch-contentscript-adwarden.js
+
+# Step 2c3: Patch theme.js to default to dark theme
+echo "🎨 Step 2c3: Patching theme.js for default dark theme..."
+node build-scripts/patch-theme.js
+
 echo ""
 
-# Step 3: Replace icons with duck image
+# Step 3: Replace icons with Ad Warden logo
 # Uses sharp (requires Node 14.18+). If run with sudo, system Node may be old - skip with warning.
-echo "🦆 Step 3: Replacing icons with duck image..."
+echo "🖼️  Step 3: Replacing icons with Ad Warden logo..."
 cd "$ROOT_DIR"
 if node build-scripts/replace-icons.js; then
     echo "   ✅ Icons replaced"
@@ -169,6 +173,10 @@ fi
 # Step 3a: Patch dashboard logo (ublock.svg -> icon_64.png)
 echo "🖼️  Step 3a: Patching dashboard logo..."
 node build-scripts/patch-dashboard.js
+
+# Step 3b: Remove element picker (zapper, unpicker, picker) - Ad Warden does not provide this
+echo "🗑️  Step 3b: Removing element picker..."
+node build-scripts/remove-element-picker.js
 
 echo ""
 
@@ -197,14 +205,14 @@ fi
 echo ""
 
 
-# Step 6: Inject notifications into background.js for Manifest V3 (Chrome)
-echo "📥 Step 6: Injecting notifications into background.js (Manifest V3)..."
+# Step 6: Inject custom modules into background.js (Chromium + Firefox)
+echo "📥 Step 6: Injecting custom modules into background.js..."
 node build-scripts/inject-background.js
 
 echo ""
 
-# Step 7: Merge manifests
-echo "📝 Step 7: Merging custom scripts into manifests..."
+# Step 7: Merge manifests (permissions, host_permissions, notifications, alarms)
+echo "📝 Step 7: Merging manifests (permissions, host_permissions)..."
 node build-scripts/merge-manifest.js
 
 if [ $? -ne 0 ]; then
@@ -270,8 +278,8 @@ echo ""
 echo "✅ Custom build complete!"
 echo ""
 echo "📦 Build outputs:"
-echo "   - chromium/              → Pure uBlock build (untouched)"
-echo "   - firefox/               → Pure uBlock build (untouched)"
-echo "   - custom-dist/chromium/ → Custom build with all updates"
-echo "   - custom-dist/firefox/  → Custom build with all updates"
+echo "   - chromium/               → Pure uBOL build (untouched)"
+echo "   - firefox/                → Pure uBOL build (untouched)"
+echo "   - custom-dist/chromium/   → Ad Warden build (Chromium)"
+echo "   - custom-dist/firefox/    → Ad Warden build (Firefox)"
 echo ""
