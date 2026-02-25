@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Patches theme.js to default to light theme instead of system preference.
+ * Patches theme.js to default to dark theme instead of system preference.
  * Runs on custom-dist after chromium/firefox are copied.
  */
 
@@ -19,9 +19,9 @@ function patchThemeJs(filePath) {
 
   let content = fs.readFileSync(filePath, 'utf8');
 
-  // uBOL theme.js: replace matchMedia-based theme with fixed 'light'
+  // uBOL theme.js: replace matchMedia-based theme with fixed 'dark'
   const oldPattern = /const mql = self\.matchMedia\('\(prefers-color-scheme: dark\)'\);\s+const theme = mql instanceof Object && mql\.matches === true\s+\? 'dark'\s+: 'light';/;
-  const newPattern = "// Default to light theme (Ad Warden)\n    const theme = 'light';";
+  const newPattern = "// Default to dark theme (Ad Warden)\n    const theme = 'dark';";
 
   const newContent = content.replace(oldPattern, newPattern);
   if (newContent !== content) {
@@ -33,7 +33,7 @@ function patchThemeJs(filePath) {
 }
 
 function run() {
-  console.log('🎨 Patching theme.js for default light theme...\n');
+  console.log('🎨 Patching theme.js for default dark theme...\n');
 
   let patched = 0;
   for (const platform of PLATFORMS) {
@@ -47,7 +47,7 @@ function run() {
   }
 
   if (patched > 0) {
-    console.log('\n✅ Theme patch complete - popup will default to light theme\n');
+    console.log('\n✅ Theme patch complete - popup will default to dark theme\n');
   }
 }
 

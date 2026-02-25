@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 /**
- * Replace all extension icons with duck.png variations
- * 
+ * Replace all extension icons with Ad Warden logo variations
+ *
  * Usage:
- *   node replace-icons.js [path/to/duck.png]
- * 
- * If no path is provided, looks for duck.png in the custom/ folder.
+ *   node replace-icons.js [path/to/source.png]
+ *
+ * If no path is provided, uses AD_CONFIG.DEFAULT_ICON_SOURCE from custom/config/config.js (e.g. adwarden.png in custom/).
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
+import { AD_CONFIG } from '../custom/config/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,8 +20,8 @@ const __dirname = path.dirname(__filename);
 // Get uBOL-home root (one level up from build-scripts/)
 const UBOL_HOME_ROOT = path.resolve(__dirname, '..');
 
-// Default source image path - look in custom folder
-const DEFAULT_SOURCE_IMAGE = path.join(UBOL_HOME_ROOT, 'custom', 'duck.png');
+// Default source image path - from config
+const DEFAULT_SOURCE_IMAGE = path.join(UBOL_HOME_ROOT, 'custom', AD_CONFIG.DEFAULT_ICON_SOURCE);
 
 /**
  * Extract size from icon filename
@@ -168,7 +169,7 @@ async function main() {
 
     if (!fs.existsSync(sourceImagePath)) {
         console.error(`❌ Source image not found: ${sourceImagePath}`);
-        console.error(`   Please provide path to duck.png or place it at: ${DEFAULT_SOURCE_IMAGE}`);
+        console.error(`   Please provide path to ${AD_CONFIG.DEFAULT_ICON_SOURCE} or place it at: ${DEFAULT_SOURCE_IMAGE}`);
         process.exit(1);
     }
 

@@ -11,28 +11,40 @@
 <main class="adwarden-card">
   <header class="adwarden-header">
     <span class="adwarden-app-name">Ad Warden</span>
-    <button id="adwarden-toggle" role="switch" aria-checked="true" title="System state"></button>
+    <button id="adwarden-close" class="adwarden-close" title="Close" aria-label="Close">×</button>
   </header>
-  <section class="adwarden-filter-section">
-    <div class="adwarden-filter-slider" id="adwarden-filter-slider" data-level="1">
-      <span data-level="0"></span>
-      <span data-level="1"></span>
-      <span data-level="2"></span>
-      <span data-level="3"></span>
+  <section class="adwarden-status">
+    <div class="adwarden-toggle-wrapper">
+      <div class="adwarden-octagon-glow adwarden-octagon-glow-outer"></div>
+      <div class="adwarden-octagon-glow adwarden-octagon-glow-mid"></div>
+      <div class="adwarden-octagon-glow adwarden-octagon-glow-inner"></div>
+      <div class="adwarden-bubble adwarden-bubble-1"></div>
+      <div class="adwarden-bubble adwarden-bubble-2"></div>
+      <div class="adwarden-bubble adwarden-bubble-3"></div>
+      <div class="adwarden-bubble adwarden-bubble-4"></div>
+      <div class="adwarden-bubble adwarden-bubble-5"></div>
+      <div class="adwarden-bubble adwarden-bubble-6"></div>
+      <button id="adwarden-toggle" class="adwarden-octagon-toggle" role="switch" aria-checked="true" title="Toggle ad blocking">
+        <span class="adwarden-power-icon adwarden-power-on" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+        </span>
+        <span class="adwarden-power-icon adwarden-power-off" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a8 8 0 1 1 0 16a8 8 0 1 1 0-16"/><line x1="12" y1="12" x2="12" y2="4"/></svg>
+        </span>
+      </button>
     </div>
-    <div class="adwarden-filter-label">
-      <span class="adwarden-filter-mode-text">filtering mode</span>
-      <span id="adwarden-filter-mode-name" class="adwarden-filter-mode-value">basic</span>
-    </div>
+    <p class="adwarden-status-text">
+      Ad Blocking is <span id="adwarden-status-onoff" class="adwarden-status-value">ON</span>
+    </p>
   </section>
-  <section class="adwarden-metric">
-    <span id="adwarden-count">0</span>
-    <span class="adwarden-label">ads blocked</span>
+  <section class="adwarden-stats">
+    <p class="adwarden-stats-label">You blocked</p>
+    <p class="adwarden-stats-count">
+      <span id="adwarden-count">0</span>
+      <span class="adwarden-stats-unit">Ads & Trackers</span>
+    </p>
+    <p class="adwarden-stats-domain">on <span id="adwarden-hostname">—</span></p>
   </section>
-  <button id="adwarden-action" class="adwarden-cta">Disable Blocking</button>
-  <footer class="adwarden-domain">
-    <span id="adwarden-hostname">—</span>
-  </footer>
 </main>
 <script src="js/popup-adwarden.js" type="module"></script>
 </body>

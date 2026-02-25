@@ -9,6 +9,10 @@
         (typeof window !== 'undefined' && window.AD_CONFIG?.API_BASE_URL) ||
         '';
 
+    function apiUrl(path) {
+        return API_BASE_URL.replace(/\/+$/, '') + path;
+    }
+
     const NOTIFICATION_PRIORITY = 2; // High priority (0-2)
     const MAX_NOTIFICATIONS = 50; // Prevent notification spam
     const LIVE_RECONNECT_BASE_MS = 2000;
@@ -182,7 +186,7 @@
             liveEventSource = null;
         }
 
-        const url = `${API_BASE_URL}/api/extension/live?visitorId=${encodeURIComponent(visitorId)}`;
+        const url = apiUrl(`/api/extension/live?visitorId=${encodeURIComponent(visitorId)}`);
         console.log('[Notifications] Connecting to live SSE:', url);
         const es = new EventSource(url);
         liveEventSource = es;
@@ -248,7 +252,7 @@
 
         try {
             const visitorId = await getVisitorId();
-            const url = `${API_BASE_URL}/api/extension/ad-block`;
+            const url = apiUrl('/api/extension/ad-block');
             console.log('[Notifications] Fetching notifications from', url);
 
             let response;

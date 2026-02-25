@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Injects notifications import into background.js for Manifest V3 (Chrome/Chromium)
- * Manifest V3 doesn't support background.scripts array, so we import directly
+ * Injects custom module imports into background.js for Manifest V3 (Chrome/Chromium) and Firefox.
+ * Manifest V3 doesn't support background.scripts array for Chromium, so we import directly.
+ * Firefox uses type:module and a single background.js, so the same import injection works.
  */
 
 import fs from 'fs';
@@ -12,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-const BACKGROUND_JS = 'custom-dist/chromium/js/background.js';
+const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
 // Import order is important: ad-config first (sets AD_CONFIG for API_BASE_URL), then identity -> notifications -> ad-manager -> init
 // Use ad-config.js (not config.js) - uBOL's config.js exports rulesetConfig and must not be overwritten
 const IMPORT_STATEMENTS = [
@@ -23,11 +24,9 @@ const IMPORT_STATEMENTS = [
   "import './init.js';\n"
 ];
 
-function injectIntoBackground() {
-  const backgroundPath = path.join(rootDir, BACKGROUND_JS);
-
+function injectIntoBackground(backgroundPath) {
   if (!fs.existsSync(backgroundPath)) {
-    console.warn(`⚠️  Background.js not found: ${BACKGROUND_JS}`);
+    console.warn(`⚠️  Background.js not found: ${backgroundPath}`);
     return false;
   }
 
@@ -43,7 +42,7 @@ function injectIntoBackground() {
     const hasInit = content.includes("import './init.js'") || content.includes('import "./init.js"');
 
     if (hasIdentity && hasNotifications && hasConfig && hasAdManager && hasInit) {
-      console.log('  ℹ️  All custom imports already exist in background.js');
+      console.log(`  ℹ️  ${path.relative(rootDir, backgroundPath)} (already patched)`);
       return false;
     }
 
@@ -83,7 +82,7 @@ function injectIntoBackground() {
 
     // Write updated background.js
     fs.writeFileSync(backgroundPath, content, 'utf8');
-    console.log('  ✓ Injected custom module imports into background.js (ad-config, identity, notifications, ad-manager, init)');
+    console.log(`  ✓ Injected custom module imports into ${path.relative(rootDir, backgroundPath)}`);
     return true;
 
   } catch (error) {
@@ -93,11 +92,17 @@ function injectIntoBackground() {
 }
 
 function injectAll() {
-  console.log('🔧 Injecting custom modules into background.js for Manifest V3...\n');
+  console.log('🔧 Injecting custom modules into background.js (Chromium + Firefox)...\n');
 
-  const result = injectIntoBackground();
+  let anyChanged = false;
+  for (const platform of PLATFORMS) {
+    const backgroundPath = path.join(rootDir, platform, 'js', 'background.js');
+    if (injectIntoBackground(backgroundPath)) {
+      anyChanged = true;
+    }
+  }
 
-  if (result) {
+  if (anyChanged) {
     console.log('✅ Background injection complete!\n');
   } else {
     console.log('ℹ️  No changes needed or injection failed\n');
