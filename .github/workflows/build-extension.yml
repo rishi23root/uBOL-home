@@ -46,51 +46,60 @@ jobs:
 
       - name: Initialize submodules
         run: |
-          git submodule update --init --recursive 
+          git submodule update --init --recursive
 
-      - name: Build uBOL-home (if needed)
+      - name: Install uBlock dependencies
         run: |
-          # Check if build is needed
-          # uBOL-home may require specific build steps
-          # For now, we assume chromium/ and firefox/ directories exist
-          # If build is needed, uncomment and adjust:
-          # make -C uBlock/ mv3-chromium
-          # make -C uBlock/ mv3-firefox
-          echo "Build step - adjust based on uBOL-home's actual build process"
-      
+          npm install --prefix uBlock
+
+      - name: Build uBlock Chromium (base extension)
+        run: |
+          make -C uBlock/ mv3-chromium
+          rm -rf chromium
+          mv uBlock/dist/build/uBOLite.chromium chromium
+
       - name: Run custom build script
         run: |
           chmod +x build-scripts/build-custom.sh
           ./build-scripts/build-custom.sh
 
-      - name: Upload Chrome extension (extension code directly, no zip-in-zip)
+      - name: Create Chrome ZIP (no nested zips)
+        run: |
+          mkdir -p dist
+          cd custom-dist/chromium
+          # Exclude any .zip files to prevent zip-in-zip (bad UX)
+          zip -r ../../dist/adwarden-chrome.zip . -x "*.zip"
+          cd ../..
+          echo "Created dist/adwarden-chrome.zip (extension files at root, no recursive zips)"
+          ls -la dist/
+
+      - name: Upload Chrome extension (directory)
         uses: actions/upload-artifact@v4
         with:
           name: chrome-extension
           path: custom-dist/chromium/
           retention-days: 7
 
-      - name: Upload Firefox extension (extension code directly, no zip-in-zip)
-        if: hashFiles('custom-dist/firefox/*') != ''
+      - name: Upload Chrome ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: firefox-extension
-          path: custom-dist/firefox/
+          name: chrome-extension-zip
+          path: dist/adwarden-chrome.zip
           retention-days: 7
 
       - name: Build summary
         run: |
           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Custom files injected successfully (custom-dist)" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Artifacts = extension code directly (one extract, no zip-in-zip)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Chrome build complete (custom-dist/chromium)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ ZIP artifact: simple zip, no recursive zips inside" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Download" >> $GITHUB_STEP_SUMMARY
-          echo "- chrome-extension, firefox-extension: extract once → extension code ready to load" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **chrome-extension**: extension directory (load unpacked)" >> $GITHUB_STEP_SUMMARY
+          echo "- **chrome-extension-zip**: adwarden-chrome.zip (load as packed extension)" >> $GITHUB_STEP_SUMMARY
 
   release:
     needs: build
-    # Skip on PR. On push to custom: preview (draft, updated each merge). On workflow_dispatch + create_release: final (published).
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/custom')
@@ -102,6 +111,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Delete existing preview release (so we can update it on each push)
         if: github.event_name == 'push'
         run: |
@@ -109,31 +119,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download artifacts (extension code per platform)
-        id: download
+      - name: Download Chrome extension artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-extension'
-          merge-multiple: false
+          name: chrome-extension
 
-      - name: Create release ZIPs (one per platform, extension code inside)
+      - name: Create release ZIP (simple zip, no zip-in-zip)
         run: |
-          echo "Downloaded structure:"
-          ls -la
           mkdir -p release-assets
-          # Only zip artifact dirs (chrome-extension, firefox-extension) - skip publish-extension submodule
-          for dir in chrome-extension firefox-extension; do
-            if [ -d "$dir" ] && [ -f "$dir/manifest.json" ]; then
-              echo "Zipping $dir..."
-              (cd "$dir" && zip -r ../release-assets/"$dir".zip .)
-            fi
-          done
-          echo "Release ZIPs (extension code inside, no zip-in-zip):"
+          cd chrome-extension
+          # -x "*.zip" ensures no recursive zips (bad UX)
+          zip -r ../release-assets/adwarden-chrome.zip . -x "*.zip"
+          cd ..
+          echo "Release ZIP (extension files at root, no recursive zips):"
           ls -la release-assets/
-          if [ -z "$(ls -A release-assets 2>/dev/null)" ]; then
-            echo "::error::No platform artifacts found"
-            exit 1
-          fi
 
       - name: Determine release tag and type
         id: tag
@@ -160,9 +159,8 @@ jobs:
           else
             echo "## ${{ steps.tag.outputs.name }}" > release_body.txt
             echo "" >> release_body.txt
-            echo "**Separate ZIP per platform:**" >> release_body.txt
-            echo "- chrome-extension.zip (Chromium)" >> release_body.txt
-            echo "- firefox-extension.zip (Firefox)" >> release_body.txt
+            echo "**Chrome extension:**" >> release_body.txt
+            echo "- adwarden-chrome.zip (load in chrome://extensions)" >> release_body.txt
           fi
 
       - name: Create GitHub release (preview on push, final on workflow_dispatch)

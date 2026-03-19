@@ -1,0 +1,20 @@
+---
+alwaysApply: false
+---
+# Linear: Ad blocker extension only
+
+When using Linear (MCP or any Linear context) in this repo:
+
+1. **Scope to one project**  
+   Use only the **Ad blocker extension** project:  
+   [Ad blocker extension](https://linear.app/extension-project/project/ad-blocker-extension-e10f85406629/issues)
+
+2. **Task source**  
+   When asked what to work on or to list tasks:
+   - Prefer listing issues with status **Todo** first.
+   - If the user asks for "tasks" or "what to do", fetch/list issues for the Ad blocker extension project only (filter by that project; optionally filter by `Todo` when relevant).
+
+3. **Work from Linear**  
+   When planning or implementing work, use issues from this project as the source of truth. Reference issue identifiers (e.g. EXT-17) in branches or commits when relevant.
+
+Do not list or act on issues from other Linear projects (e.g. "Finalize the data recording for the meta_agent") unless the user explicitly asks for them.
