@@ -1,6 +1,7 @@
 /**
  * Ad Warden - Popup SPA (sidebar + Home / Block list / Account)
  * uBO APIs: popupPanelData, setFilteringMode, getFilteringModeDetails
+ * AD_CONFIG is loaded via <script type="module" src="js/ad-config.js"> in popup.html
  */
 
 import { browser } from './popup-ext.js';
@@ -569,10 +570,9 @@ function clearAuthStatus() {
 }
 
 function getPaymentPlansUrl() {
-    const fromPopup = typeof globalThis !== 'undefined' && globalThis.ADWARDEN_POPUP?.PAYMENT_PLANS_URL;
-    const fromConfig = typeof globalThis !== 'undefined' && globalThis.AD_CONFIG?.PAYMENT_PLANS_URL;
-    const raw = (fromPopup || fromConfig || '').trim();
-    return raw;
+    const cfg = String(globalThis.AD_CONFIG?.PAYMENT_PLANS_URL ?? '').trim();
+    const pop = String(globalThis.ADWARDEN_POPUP?.PAYMENT_PLANS_URL ?? '').trim();
+    return cfg || pop;
 }
 
 function renderLoggedIn(auth) {

@@ -1,10 +1,9 @@
 /**
  * Popup-only env (loaded before popup-adwarden.js).
- * PAYMENT_PLANS_URL mirrors custom/config/config.js — keep both in sync or set at build time.
+ * Payment URL comes from AD_CONFIG (custom/config/config.js → js/ad-config.js) via import in popup-adwarden.js.
+ * Set PAYMENT_PLANS_URL here only if you need a popup-specific override (non-empty replaces config).
  */
 (function () {
     'use strict';
-    globalThis.ADWARDEN_POPUP = {
-        PAYMENT_PLANS_URL: '',
-    };
+    globalThis.ADWARDEN_POPUP = {};
 })();

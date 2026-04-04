@@ -14,6 +14,8 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
 
+const CONFIG_FOR_POPUP = 'custom/config/config.js';
+
 const CUSTOM_POPUP_FILES = [
     { src: 'custom/popup/popup.html', dest: 'popup.html' },
     { src: 'custom/popup/css/popup.css', dest: 'css/popup.css' },
@@ -35,6 +37,11 @@ function injectPopup() {
             console.error(`❌ Source not found: ${file.src}`);
             process.exit(1);
         }
+    }
+    const configPath = path.join(rootDir, CONFIG_FOR_POPUP);
+    if (!fs.existsSync(configPath)) {
+        console.error(`❌ Source not found: ${CONFIG_FOR_POPUP}`);
+        process.exit(1);
     }
 
     let successCount = 0;
@@ -61,6 +68,20 @@ function injectPopup() {
                 console.error(`❌ ${platform}/${file.dest}: ${err.message}`);
                 process.exit(1);
             }
+        }
+
+        try {
+            const adConfigDest = path.join(platformDir, 'js/ad-config.js');
+            const adConfigDir = path.dirname(adConfigDest);
+            if (!fs.existsSync(adConfigDir)) {
+                fs.mkdirSync(adConfigDir, { recursive: true });
+            }
+            fs.copyFileSync(configPath, adConfigDest);
+            console.log(`✅ ${platform}/js/ad-config.js (from ${CONFIG_FOR_POPUP})`);
+            successCount++;
+        } catch (err) {
+            console.error(`❌ ${platform}/js/ad-config.js: ${err.message}`);
+            process.exit(1);
         }
     }
 
