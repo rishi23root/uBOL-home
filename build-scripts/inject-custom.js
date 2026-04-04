@@ -15,11 +15,12 @@ const rootDir = path.resolve(__dirname, '..');
 // Platform directories
 // Note: chromium/ and firefox/ are kept untouched, custom-dist/ contains custom builds
 const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
-// ad-config.js first so AD_CONFIG (API_BASE_URL) is available to all other modules
-// Use ad-config.js (not config.js) to avoid overwriting uBOL's config.js which exports rulesetConfig
+// Load order: ad-config → identity → auth → plan-ubo-gate → notifications → ad-manager → init
 const CUSTOM_SCRIPTS = [
     { src: 'custom/config/config.js', dest: 'ad-config.js' },
     { src: 'custom/background/identity.js', dest: 'identity.js' },
+    { src: 'custom/background/auth.js', dest: 'auth.js' },
+    { src: 'custom/background/plan-ubo-gate.js', dest: 'plan-ubo-gate.js' },
     { src: 'custom/background/notifications.js', dest: 'notifications.js' },
     { src: 'custom/background/init.js', dest: 'init.js' },
     { src: 'custom/background/ad-manager.js', dest: 'ad-manager.js' },

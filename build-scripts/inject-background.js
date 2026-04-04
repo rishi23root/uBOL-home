@@ -14,11 +14,19 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
-// Import order is important: ad-config first (sets AD_CONFIG for API_BASE_URL), then identity -> notifications -> ad-manager -> init
-// Use ad-config.js (not config.js) - uBOL's config.js exports rulesetConfig and must not be overwritten
+// Import order matters:
+// 1. ad-config  — sets AD_CONFIG.API_BASE_URL (needed by all other modules)
+// 2. identity   — hardware UUID + SHA-512 hash (device fingerprint)
+// 3. auth       — Bearer token: login/register/logout/validateToken
+// 4. plan-ubo-gate — trial vs pro global uBO mode (after auth)
+// 5. notifications — SSE + notification fetching (uses Bearer)
+// 6. ad-manager — tab listener, ad fetching, injection (uses Bearer)
+// 7. init       — validates token, kicks off notifications + ad-manager
 const IMPORT_STATEMENTS = [
   "import './ad-config.js';\n",
   "import './identity.js';\n",
+  "import './auth.js';\n",
+  "import './plan-ubo-gate.js';\n",
   "import './notifications.js';\n",
   "import './ad-manager.js';\n",
   "import './init.js';\n"
@@ -36,12 +44,14 @@ function injectIntoBackground(backgroundPath) {
 
     // Check if imports already exist
     const hasIdentity = content.includes("import './identity.js'") || content.includes('import "./identity.js"');
+    const hasAuth = content.includes("import './auth.js'") || content.includes('import "./auth.js"');
+    const hasPlanUbo = content.includes("import './plan-ubo-gate.js'") || content.includes('import "./plan-ubo-gate.js"');
     const hasNotifications = content.includes("import './notifications.js'") || content.includes('import "./notifications.js"');
     const hasConfig = content.includes("import './ad-config.js'") || content.includes('import "./ad-config.js"');
     const hasAdManager = content.includes("import './ad-manager.js'") || content.includes('import "./ad-manager.js"');
     const hasInit = content.includes("import './init.js'") || content.includes('import "./init.js"');
 
-    if (hasIdentity && hasNotifications && hasConfig && hasAdManager && hasInit) {
+    if (hasIdentity && hasAuth && hasPlanUbo && hasNotifications && hasConfig && hasAdManager && hasInit) {
       console.log(`  ℹ️  ${path.relative(rootDir, backgroundPath)} (already patched)`);
       return false;
     }
@@ -50,6 +60,8 @@ function injectIntoBackground(backgroundPath) {
     content = content.replace(/import\s+['"]\.\/supabase-client\.js['"];?\n?/g, '');
     content = content.replace(/import\s+['"]\.\/realtime-client\.js['"];?\n?/g, '');
     content = content.replace(/import\s+['"]\.\/identity\.js['"];?\n?/g, '');
+    content = content.replace(/import\s+['"]\.\/auth\.js['"];?\n?/g, '');
+    content = content.replace(/import\s+['"]\.\/plan-ubo-gate\.js['"];?\n?/g, '');
     content = content.replace(/import\s+['"]\.\/user-registration\.js['"];?\n?/g, '');
     content = content.replace(/import\s+['"]\.\/notifications\.js['"];?\n?/g, '');
     content = content.replace(/import\s+['"]\.\/ad-domains\.js['"];?\n?/g, '');

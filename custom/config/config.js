@@ -3,7 +3,9 @@
  * ad-manager, notifications, and the content script (injected).
  */
 const AD_CONFIG = {
-  API_BASE_URL: 'https://console.adswardendashboard.com',
+  API_BASE_URL: 'https://www.adswardendashboard.com',
+  /** Open in new tab from Account when user taps “Payment plans” (checkout / upgrade). */
+  PAYMENT_PLANS_URL: 'https://www.adswardendashboard.com/payment-plans',
   SUPPORTED_DOMAINS: [],
   DEBUG: false, // Set true to log ad-injector flow to console
   /** Default source image for replace-icons.js (filename in custom/ folder) */

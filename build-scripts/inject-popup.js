@@ -17,8 +17,13 @@ const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
 const CUSTOM_POPUP_FILES = [
     { src: 'custom/popup/popup.html', dest: 'popup.html' },
     { src: 'custom/popup/css/popup.css', dest: 'css/popup.css' },
+    { src: 'custom/popup/js/adwarden-env.js', dest: 'js/adwarden-env.js' },
     { src: 'custom/popup/js/popup-adwarden.js', dest: 'js/popup-adwarden.js' },
     { src: 'custom/popup/js/popup-ext.js', dest: 'js/popup-ext.js' },
+    { src: 'custom/popup/js/adwarden-messaging.js', dest: 'js/adwarden-messaging.js' },
+    // Auth page
+    { src: 'custom/popup/adwarden-auth.html', dest: 'adwarden-auth.html' },
+    { src: 'custom/popup/js/adwarden-auth.js', dest: 'js/adwarden-auth.js' },
 ];
 
 function injectPopup() {

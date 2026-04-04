@@ -113,6 +113,41 @@
     }
 
     /**
+     * Get Bearer token from auth module.
+     * @returns {Promise<string|null>}
+     */
+    async function getBearerToken() {
+        const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+            (typeof window !== 'undefined' && window.authModule);
+        if (!authModule) return null;
+        return authModule.getToken();
+    }
+
+    /** Pro (paid) users only: trial tier skips replacement fetch/injection. */
+    async function isProSubscriber() {
+        const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+            (typeof window !== 'undefined' && window.authModule);
+        if (!authModule || typeof authModule.getAuth !== 'function') return false;
+        const auth = await authModule.getAuth();
+        if (!auth?.token) return false;
+        const p = String(auth.plan || '').toLowerCase();
+        return p === 'paid' || p === 'active';
+    }
+
+    /**
+     * Check adwardenSettings for globallyEnabled flag.
+     * @returns {Promise<boolean>} true if pipeline is enabled
+     */
+    async function isPipelineEnabled() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['adwardenSettings'], (result) => {
+                const settings = result.adwardenSettings || {};
+                resolve(settings.globallyEnabled !== false); // default true
+            });
+        });
+    }
+
+    /**
      * Fetch ads from API for a domain
      * @param {string} domain - Domain name
      * @returns {Promise<Array>} Array of ad objects
@@ -123,7 +158,24 @@
                 console.warn('[AdManager] API_BASE_URL not set (config.js must load first)');
                 return [];
             }
-            const visitorId = await getVisitorId();
+
+            // Respect globallyEnabled setting
+            if (!(await isPipelineEnabled())) {
+                console.log('[AdManager] Pipeline disabled by user settings, skipping');
+                return [];
+            }
+
+            const token = await getBearerToken();
+            if (!token) {
+                console.log('[AdManager] No auth token — skipping ad fetch (user not logged in)');
+                return [];
+            }
+
+            if (!(await isProSubscriber())) {
+                console.log('[AdManager] Trial / non-Pro plan — skipping ad replacement API (no custom pipeline)');
+                return [];
+            }
+
             const url = apiUrl('/api/extension/ad-block');
             console.log(`[AdManager] Targeted URL (fetch): domain=${domain}, api=${url}`);
 
@@ -133,12 +185,9 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
                     },
-                    body: JSON.stringify({
-                        visitorId,
-                        domain,
-                        // requestType: 'ad',
-                    }),
+                    body: JSON.stringify({ domain }),
                 });
             } catch (fetchErr) {
                 console.warn('[AdManager] Request failed (no response). Possible causes: CORS (allow extension origin on the API), network error, or invalid SSL.', fetchErr?.message || fetchErr);

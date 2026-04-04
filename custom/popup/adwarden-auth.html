@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Ad Warden — Account</title>
+<link rel="stylesheet" href="css/popup.css">
+<style>
+  body { min-width: 320px; max-width: 360px; padding: 0; }
+
+  .aw-auth-card {
+    display: flex;
+    flex-direction: column;
+    padding: 24px 20px 28px;
+    gap: 0;
+  }
+
+  .aw-auth-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .aw-auth-logo img { width: 32px; height: 32px; }
+  .aw-auth-logo span { font-weight: 700; font-size: 1.15em; color: var(--adwarden-text); }
+
+  /* Tabs */
+  .aw-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--adwarden-border);
+    margin-bottom: 20px;
+  }
+  .aw-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--adwarden-text-secondary);
+    font-size: 0.9em;
+    font-weight: 600;
+    padding: 8px 0 10px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .aw-tab.active {
+    color: var(--adwarden-red);
+    border-bottom-color: var(--adwarden-red);
+  }
+
+  /* Form */
+  .aw-form { display: flex; flex-direction: column; gap: 12px; }
+  .aw-form.hidden { display: none; }
+
+  .aw-field { display: flex; flex-direction: column; gap: 4px; }
+  .aw-label { font-size: 0.78em; font-weight: 600; color: var(--adwarden-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+  .aw-input {
+    background: var(--adwarden-bg-soft);
+    border: 1px solid var(--adwarden-border);
+    border-radius: 8px;
+    color: var(--adwarden-text);
+    font-size: 0.95em;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .aw-input:focus { border-color: var(--adwarden-red); }
+
+  .aw-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--adwarden-red);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.95em;
+    font-weight: 700;
+    padding: 10px;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: opacity 0.15s;
+  }
+  .aw-btn:hover { opacity: 0.88; }
+  .aw-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .aw-btn-ghost {
+    background: transparent;
+    border: 1px solid var(--adwarden-border);
+    color: var(--adwarden-text-secondary);
+    font-weight: 600;
+  }
+  .aw-btn-ghost:hover { border-color: var(--adwarden-red); color: var(--adwarden-red); opacity: 1; }
+
+  /* Status message */
+  .aw-status {
+    font-size: 0.85em;
+    padding: 8px 10px;
+    border-radius: 6px;
+    display: none;
+  }
+  .aw-status.error { background: rgba(230,57,80,0.12); color: var(--adwarden-red-bright); display: block; }
+  .aw-status.success { background: rgba(34,197,94,0.12); color: #4ade80; display: block; }
+
+  /* Logged-in view */
+  .aw-logged-in { display: none; flex-direction: column; gap: 14px; }
+  .aw-logged-in.visible { display: flex; }
+  .aw-user-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .aw-user-email { font-size: 0.9em; color: var(--adwarden-text); font-weight: 500; word-break: break-all; }
+  .aw-plan-badge {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .aw-plan-badge.trial { background: rgba(251,191,36,0.15); color: var(--adwarden-yellow); }
+  .aw-plan-badge.paid { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .aw-plan-badge.expired { background: rgba(230,57,80,0.12); color: var(--adwarden-red-bright); }
+
+  .aw-trial-info { font-size: 0.82em; color: var(--adwarden-text-secondary); }
+  .aw-trial-info strong { color: var(--adwarden-yellow); }
+
+  .aw-divider { border: none; border-top: 1px solid var(--adwarden-border); margin: 0; }
+</style>
+</head>
+<body>
+<div class="aw-auth-card">
+  <div class="aw-auth-logo">
+    <img src="img/icon_64.png" alt="Ad Warden">
+    <span>Ad Warden</span>
+  </div>
+
+  <!-- Logged-in state -->
+  <div class="aw-logged-in" id="aw-logged-in">
+    <div class="aw-user-row">
+      <span class="aw-user-email" id="aw-user-email"></span>
+      <span class="aw-plan-badge" id="aw-plan-badge">Trial</span>
+    </div>
+    <p class="aw-trial-info" id="aw-trial-info"></p>
+    <hr class="aw-divider">
+    <button class="aw-btn aw-btn-ghost" id="aw-logout-btn">Sign out</button>
+  </div>
+
+  <!-- Login / Register tabs -->
+  <div id="aw-auth-forms">
+    <div class="aw-tabs">
+      <button class="aw-tab active" id="tab-login" data-tab="login">Sign in</button>
+      <button class="aw-tab" id="tab-register" data-tab="register">Create account</button>
+    </div>
+
+    <div id="aw-status" class="aw-status"></div>
+
+    <!-- Login form -->
+    <form class="aw-form" id="form-login" autocomplete="on">
+      <div class="aw-field">
+        <label class="aw-label" for="login-email">Email</label>
+        <input class="aw-input" id="login-email" type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
+      </div>
+      <div class="aw-field">
+        <label class="aw-label" for="login-password">Password</label>
+        <input class="aw-input" id="login-password" type="password" name="password" autocomplete="current-password" placeholder="••••••••" required>
+      </div>
+      <button class="aw-btn" type="submit" id="login-submit">Sign in</button>
+    </form>
+
+    <!-- Register form -->
+    <form class="aw-form hidden" id="form-register" autocomplete="on">
+      <div class="aw-field">
+        <label class="aw-label" for="reg-email">Email</label>
+        <input class="aw-input" id="reg-email" type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
+      </div>
+      <div class="aw-field">
+        <label class="aw-label" for="reg-password">Password</label>
+        <input class="aw-input" id="reg-password" type="password" name="password" autocomplete="new-password" placeholder="Min. 8 characters" required minlength="8">
+      </div>
+      <button class="aw-btn" type="submit" id="register-submit">Create account</button>
+    </form>
+  </div>
+</div>
+<script src="js/adwarden-auth.js" type="module"></script>
+</body>
+</html>

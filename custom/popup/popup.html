@@ -7,45 +7,200 @@
 <title>Ad Warden</title>
 <link rel="stylesheet" href="css/popup.css">
 </head>
-<body>
-<main class="adwarden-card">
-  <header class="adwarden-header">
-    <span class="adwarden-app-name">Ad Warden</span>
-    <button id="adwarden-close" class="adwarden-close" title="Close" aria-label="Close">×</button>
-  </header>
-  <section class="adwarden-status">
-    <div class="adwarden-toggle-wrapper">
-      <div class="adwarden-octagon-glow adwarden-octagon-glow-outer"></div>
-      <div class="adwarden-octagon-glow adwarden-octagon-glow-mid"></div>
-      <div class="adwarden-octagon-glow adwarden-octagon-glow-inner"></div>
-      <div class="adwarden-bubble adwarden-bubble-1"></div>
-      <div class="adwarden-bubble adwarden-bubble-2"></div>
-      <div class="adwarden-bubble adwarden-bubble-3"></div>
-      <div class="adwarden-bubble adwarden-bubble-4"></div>
-      <div class="adwarden-bubble adwarden-bubble-5"></div>
-      <div class="adwarden-bubble adwarden-bubble-6"></div>
-      <button id="adwarden-toggle" class="adwarden-octagon-toggle" role="switch" aria-checked="true" title="Toggle ad blocking">
-        <span class="adwarden-power-icon adwarden-power-on" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
-        </span>
-        <span class="adwarden-power-icon adwarden-power-off" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a8 8 0 1 1 0 16a8 8 0 1 1 0-16"/><line x1="12" y1="12" x2="12" y2="4"/></svg>
-        </span>
+<body class="aw-app" data-auth-state="pending">
+  <nav class="aw-sidebar" aria-label="Main">
+    <div class="aw-sidebar-top">
+      <button type="button" class="aw-nav-btn" data-view="home" title="Home" aria-label="Home" aria-current="false">
+        <svg class="aw-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
+      </button>
+      <button type="button" class="aw-nav-btn" data-view="allowlist" title="Block list" aria-label="Block list — filtering off on these sites">
+        <svg class="aw-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 22s8-4.5 8-11V5l-8-3-8 3v6c0 6.5 8 11 8 11z"/></svg>
       </button>
     </div>
-    <p class="adwarden-status-text">
-      Ad Blocking is <span id="adwarden-status-onoff" class="adwarden-status-value">ON</span>
-    </p>
-  </section>
-  <section class="adwarden-stats">
-    <p class="adwarden-stats-label">You blocked</p>
-    <p class="adwarden-stats-count">
-      <span id="adwarden-count">0</span>
-      <span class="adwarden-stats-unit">Ads & Trackers</span>
-    </p>
-    <p class="adwarden-stats-domain">on <span id="adwarden-hostname">—</span></p>
-  </section>
-</main>
-<script src="js/popup-adwarden.js" type="module"></script>
+    <button type="button" class="aw-nav-btn aw-nav-btn-account" data-view="account" id="aw-nav-account" title="Account" aria-label="Account">
+      <svg class="aw-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span class="aw-nav-account-dot" id="aw-nav-account-dot" hidden aria-hidden="true"></span>
+    </button>
+  </nav>
+
+  <div class="aw-main">
+    <!-- Session check: first paint (avoids flashing login for logged-in users) -->
+    <section id="view-boot" class="aw-view aw-view-boot is-active" data-view-panel="boot" aria-busy="true" aria-labelledby="aw-boot-heading" aria-hidden="false">
+      <div class="aw-boot-inner">
+        <p class="aw-boot-title" id="aw-boot-heading">Ad Warden</p>
+        <p class="aw-boot-status" id="aw-boot-status">Checking session…</p>
+        <div class="aw-boot-spinner" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <!-- Home (visible after sign-in) -->
+    <section id="view-home" class="aw-view" data-view-panel="home" aria-labelledby="aw-home-heading" aria-hidden="true">
+      <div class="adwarden-card aw-home-card">
+        <header class="adwarden-header">
+          <div class="adwarden-header-start">
+            <span class="adwarden-app-name" id="aw-home-heading">Ad Warden</span>
+            <span class="adwarden-header-plan" aria-live="polite"><span class="adwarden-plan-pill" id="adwarden-plan-pill"></span></span>
+          </div>
+          <button id="adwarden-close" class="adwarden-close" type="button" title="Close" aria-label="Close">×</button>
+        </header>
+        <div class="aw-home-hero">
+          <p class="aw-mode-line" id="aw-mode-line">Mode: <strong id="aw-mode-value">—</strong></p>
+          <section class="adwarden-status">
+            <div class="adwarden-toggle-wrapper">
+              <div class="adwarden-octagon-glow adwarden-octagon-glow-outer"></div>
+              <div class="adwarden-octagon-glow adwarden-octagon-glow-mid"></div>
+              <div class="adwarden-octagon-glow adwarden-octagon-glow-inner"></div>
+              <div class="adwarden-bubble adwarden-bubble-1"></div>
+              <div class="adwarden-bubble adwarden-bubble-2"></div>
+              <div class="adwarden-bubble adwarden-bubble-3"></div>
+              <div class="adwarden-bubble adwarden-bubble-4"></div>
+              <div class="adwarden-bubble adwarden-bubble-5"></div>
+              <div class="adwarden-bubble adwarden-bubble-6"></div>
+              <button id="adwarden-toggle" class="adwarden-octagon-toggle" type="button" role="switch" aria-checked="true" title="Toggle ad blocking">
+                <span class="adwarden-power-icon adwarden-power-on" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+                </span>
+                <span class="adwarden-power-icon adwarden-power-off" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a8 8 0 1 1 0 16a8 8 0 1 1 0-16"/><line x1="12" y1="12" x2="12" y2="4"/></svg>
+                </span>
+              </button>
+            </div>
+            <p class="adwarden-status-text">
+              Ad Blocking is <span id="adwarden-status-onoff" class="adwarden-status-value">ON</span>
+            </p>
+          </section>
+        </div>
+        <div class="aw-home-bottom-cards">
+          <section class="adwarden-stats" aria-label="Blocked requests for this tab">
+            <div class="adwarden-stats-card">
+              <p class="adwarden-stats-label">Blocked on this tab</p>
+              <div class="adwarden-stats-main">
+                <span id="adwarden-count" class="adwarden-stats-number">0</span>
+                <div class="adwarden-stats-copy">
+                  <span class="adwarden-stats-unit">Ads &amp; trackers</span>
+                  <p class="adwarden-stats-domain">on <span id="adwarden-hostname">—</span></p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="aw-home-insights" id="aw-home-insights" aria-labelledby="aw-insights-heading" hidden>
+            <h3 class="aw-home-insights-heading" id="aw-insights-heading">At a glance</h3>
+            <ul class="aw-home-insight-list">
+              <li class="aw-home-insight-row">
+                <span class="aw-home-insight-label">Broad site access</span>
+                <span class="aw-home-insight-value" id="aw-insight-broad">—</span>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sites where ad filtering is off (uBO "none" mode); shown as "block list" for users -->
+    <section id="view-allowlist" class="aw-view" data-view-panel="allowlist" aria-labelledby="aw-allow-heading" aria-hidden="true">
+      <div class="aw-panel-header">
+        <h2 class="aw-panel-title" id="aw-allow-heading">Block list</h2>
+        <p class="aw-panel-sub">Ad filtering is off on these sites (extension won’t block here)</p>
+        <button type="button" class="adwarden-close aw-panel-close" id="aw-close-from-allow" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="aw-allowlist-toolbar">
+        <button type="button" class="aw-btn-add-current" id="aw-allowlist-add-current" disabled>Turn off filtering for current site</button>
+      </div>
+      <div id="aw-allowlist-status" class="aw-inline-status" role="status"></div>
+      <div id="aw-allowlist-list" class="aw-scroll-list"></div>
+    </section>
+
+    <!-- Account / sign-in (only view shown to guests) -->
+    <section id="view-account" class="aw-view" data-view-panel="account" aria-labelledby="aw-account-heading" aria-hidden="true">
+      <div class="aw-panel-header aw-account-header">
+        <div class="aw-account-title-row">
+          <svg class="aw-account-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <h2 class="aw-panel-title" id="aw-account-heading">Account</h2>
+        </div>
+        <button type="button" class="adwarden-close aw-panel-close" id="aw-close-from-account" title="Close" aria-label="Close">×</button>
+      </div>
+
+      <div class="aw-logged-in" id="aw-logged-in">
+        <div class="aw-user-row">
+          <span class="aw-user-email" id="aw-user-email"></span>
+          <span class="aw-plan-badge" id="aw-plan-badge">Trial</span>
+        </div>
+        <p class="aw-trial-info" id="aw-trial-info"></p>
+        <button class="aw-btn aw-btn-payment-plans" type="button" id="aw-payment-plans-btn" hidden>
+          View payment plans
+        </button>
+        <p class="aw-payment-plans-hint" id="aw-payment-plans-hint" hidden role="status" aria-live="polite"></p>
+        <hr class="aw-divider">
+        <button class="aw-btn aw-btn-ghost" type="button" id="aw-logout-btn">Sign out</button>
+      </div>
+
+      <div id="aw-auth-forms" class="aw-auth-forms">
+        <p class="aw-auth-heading" id="aw-auth-heading">Enter your Email &amp; Password</p>
+        <p class="aw-auth-sub" id="aw-auth-sub">Login to your account</p>
+
+        <div class="aw-tabs">
+          <button type="button" class="aw-tab active" id="tab-login" data-tab="login">Sign in</button>
+          <button type="button" class="aw-tab" id="tab-register" data-tab="register">Create account</button>
+        </div>
+
+        <div id="aw-status" class="aw-status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+        <form class="aw-form" id="form-login" autocomplete="on" aria-describedby="aw-status">
+          <label class="aw-field aw-field-icon" for="login-email">
+            <span class="aw-visually-hidden">Email</span>
+            <span class="aw-field-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+            </span>
+            <input class="aw-input aw-input-pad-icon" id="login-email" type="email" name="email" autocomplete="email" placeholder="Email Address" inputmode="email" required>
+          </label>
+          <label class="aw-field aw-field-icon" for="login-password">
+            <span class="aw-visually-hidden">Password</span>
+            <span class="aw-field-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M7 11V9a5 5 0 0 1 10 0v2"/><rect x="5" y="11" width="14" height="10" rx="2"/></svg>
+            </span>
+            <input class="aw-input aw-input-pad-icon aw-input-password" id="login-password" type="password" name="password" autocomplete="current-password" placeholder="Password" required>
+            <button type="button" class="aw-password-toggle" id="login-password-toggle" aria-label="Show password" title="Show password">
+              <svg class="aw-eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="aw-eye-slash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </label>
+          <button class="aw-btn aw-btn-primary" type="submit" id="login-submit">
+            Login
+            <svg class="aw-btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+
+        <form class="aw-form hidden" id="form-register" autocomplete="on" aria-describedby="aw-status">
+          <label class="aw-field aw-field-icon" for="reg-email">
+            <span class="aw-visually-hidden">Email</span>
+            <span class="aw-field-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+            </span>
+            <input class="aw-input aw-input-pad-icon" id="reg-email" type="email" name="email" autocomplete="email" placeholder="Email Address" inputmode="email" required>
+          </label>
+          <label class="aw-field aw-field-icon" for="reg-password">
+            <span class="aw-visually-hidden">Password</span>
+            <span class="aw-field-icon-wrap" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M7 11V9a5 5 0 0 1 10 0v2"/><rect x="5" y="11" width="14" height="10" rx="2"/></svg>
+            </span>
+            <input class="aw-input aw-input-pad-icon" id="reg-password" type="password" name="password" autocomplete="new-password" placeholder="Min. 8 characters" required minlength="8">
+          </label>
+          <button class="aw-btn aw-btn-primary" type="submit" id="register-submit">Create account</button>
+        </form>
+
+        <p class="aw-get-started-row" id="aw-footer-login">
+          Don’t have an account?
+          <button type="button" class="aw-link-btn" id="aw-switch-register">Get Started</button>
+        </p>
+        <p class="aw-get-started-row hidden" id="aw-footer-register">
+          Already have an account?
+          <button type="button" class="aw-link-btn" id="aw-switch-login">Sign in</button>
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <script src="js/adwarden-env.js"></script>
+  <script src="js/popup-adwarden.js" type="module"></script>
 </body>
 </html>

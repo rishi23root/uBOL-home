@@ -28,24 +28,40 @@
     let reconnectDelayMs = LIVE_RECONNECT_BASE_MS;
 
     /**
-     * Get visitor ID (hashed hardware ID)
-     * @returns {Promise<string>}
+     * Get Bearer token from auth module.
+     * @returns {Promise<string|null>}
      */
-    async function getVisitorId() {
-        try {
-            if (typeof globalThis !== 'undefined' && globalThis.identityModule) {
-                return await globalThis.identityModule.getHashedHardwareId();
-            } else if (typeof window !== 'undefined' && window.identityModule) {
-                return await window.identityModule.getHashedHardwareId();
-            } else {
-                console.error('[Notifications] Identity module not available');
-                // Fallback: generate a temporary ID
-                return 'temp-' + Date.now();
-            }
-        } catch (error) {
-            console.error('[Notifications] Failed to get visitor ID:', error);
-            return 'temp-' + Date.now();
-        }
+    async function getBearerToken() {
+        const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+            (typeof window !== 'undefined' && window.authModule);
+        if (!authModule) return null;
+        return authModule.getToken();
+    }
+
+    /**
+     * Check adwardenSettings.notifyMuted flag.
+     * @returns {Promise<boolean>} true if notifications are muted
+     */
+    async function isNotifyMuted() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['adwardenSettings'], (result) => {
+                const settings = result.adwardenSettings || {};
+                resolve(settings.notifyMuted === true);
+            });
+        });
+    }
+
+    /**
+     * Check adwardenSettings.globallyEnabled flag.
+     * @returns {Promise<boolean>}
+     */
+    async function isPipelineEnabled() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['adwardenSettings'], (result) => {
+                const settings = result.adwardenSettings || {};
+                resolve(settings.globallyEnabled !== false);
+            });
+        });
     }
 
     /**
@@ -167,11 +183,12 @@
     }
 
     /**
-     * Connect to live SSE endpoint so user is marked active; pull on first connect and on notification events.
-     * @param {string} visitorId - Stable visitor ID
+     * Connect to live SSE endpoint using Bearer token via ?token= query param
+     * (EventSource cannot set custom headers).
+     * @param {string} token - Bearer token
      */
-    function connectLive(visitorId) {
-        if (!visitorId) return;
+    function connectLive(token) {
+        if (!token) return;
         if (!API_BASE_URL) {
             console.warn('[Notifications] API_BASE_URL not set (config.js must load first)');
             return;
@@ -186,8 +203,8 @@
             liveEventSource = null;
         }
 
-        const url = apiUrl(`/api/extension/live?visitorId=${encodeURIComponent(visitorId)}`);
-        console.log('[Notifications] Connecting to live SSE:', url);
+        const url = apiUrl(`/api/extension/live?token=${encodeURIComponent(token)}`);
+        console.log('[Notifications] Connecting to live SSE (Bearer via ?token)');
         const es = new EventSource(url);
         liveEventSource = es;
         let firstConnectDone = false;
@@ -228,7 +245,8 @@
             liveEventSource = null;
             reconnectTimerId = setTimeout(() => {
                 reconnectTimerId = null;
-                connectLive(visitorId);
+                // Re-read token on reconnect in case it refreshed
+                getBearerToken().then((t) => { if (t) connectLive(t); });
                 reconnectDelayMs = Math.min(reconnectDelayMs * 2, LIVE_RECONNECT_MAX_MS);
             }, reconnectDelayMs);
         };
@@ -250,8 +268,25 @@
             return;
         }
 
+        // Guard: globally disabled
+        if (!(await isPipelineEnabled())) {
+            console.log('[Notifications] Pipeline disabled, skipping fetch');
+            return;
+        }
+
+        // Guard: notifications muted
+        if (await isNotifyMuted()) {
+            console.log('[Notifications] Notifications muted by user setting');
+            return;
+        }
+
+        const token = await getBearerToken();
+        if (!token) {
+            console.log('[Notifications] No auth token — skipping notification fetch');
+            return;
+        }
+
         try {
-            const visitorId = await getVisitorId();
             const url = apiUrl('/api/extension/ad-block');
             console.log('[Notifications] Fetching notifications from', url);
 
@@ -261,8 +296,9 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
                     },
-                    body: JSON.stringify({ visitorId, requestType: 'notification' }),
+                    body: JSON.stringify({ requestType: 'notification' }),
                 });
             } catch (fetchErr) {
                 console.warn('[Notifications] Request failed (no response). Possible causes: CORS (allow extension origin on the API), network error, or invalid SSL.', fetchErr?.message || fetchErr);
@@ -316,7 +352,11 @@
             return;
         }
 
-        const visitorId = await getVisitorId();
+        const token = await getBearerToken();
+        if (!token) {
+            console.log('[Notifications] No auth token — skipping SSE connect');
+            return;
+        }
 
         // Check notification permission
         chrome.notifications.getPermissionLevel((level) => {
@@ -329,8 +369,8 @@
             chrome.notifications.onClicked.addListener(handleNotificationClick);
             chrome.notifications.onClosed.addListener(handleNotificationClosed);
 
-            // Connect to live SSE first so user is marked active; first pull happens on connection_count
-            connectLive(visitorId);
+            // Connect to live SSE using Bearer token via ?token= param
+            connectLive(token);
 
             isInitialized = true;
             console.log('[Notifications] Notification system initialized (live SSE first, then pull on connect)');

@@ -30,37 +30,49 @@
             try {
                 console.log('[Init] Starting custom module initialization...');
 
-                // Step 1: Get hashed hardware ID (visitorId)
-                let hardwareIdHash = null;
-                if (typeof globalThis !== 'undefined' && globalThis.identityModule) {
-                    hardwareIdHash = await globalThis.identityModule.getHashedHardwareId();
-                    console.log('[Init] Hardware ID hashed and ready (visitorId)');
-                } else if (typeof window !== 'undefined' && window.identityModule) {
-                    hardwareIdHash = await window.identityModule.getHashedHardwareId();
-                    console.log('[Init] Hardware ID hashed and ready (visitorId)');
+                // Step 1: Get hashed hardware ID (secondary device fingerprint, retained for analytics)
+                const identityModule = (typeof globalThis !== 'undefined' && globalThis.identityModule) ||
+                    (typeof window !== 'undefined' && window.identityModule);
+                if (identityModule) {
+                    await identityModule.getHashedHardwareId();
+                    console.log('[Init] Hardware ID ready (device fingerprint)');
                 } else {
-                    console.error('[Init] Identity module not found');
-                    return;
+                    console.warn('[Init] Identity module not found');
                 }
 
-                // Step 2: Initialize notifications (connects to live SSE first so user is marked active, then pulls on first connect)
+                // Step 2: Validate stored Bearer token (auth.js)
+                const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+                    (typeof window !== 'undefined' && window.authModule);
+                if (authModule) {
+                    const auth = await authModule.validateToken();
+                    if (auth) {
+                        console.log('[Init] Auth valid, plan:', auth.plan);
+                    } else {
+                        console.log('[Init] No valid auth token — injection pipeline will be skipped');
+                    }
+                    try {
+                        globalThis.adwardenPlanUboGate?.syncFromAuth?.(auth || null);
+                    } catch (_) {}
+                } else {
+                    console.error('[Init] Auth module not found');
+                }
+
+                // Step 3: Initialize notifications (requires valid token)
                 const notificationsModule = (typeof globalThis !== 'undefined' && globalThis.notificationsModule) ||
                     (typeof window !== 'undefined' && window.notificationsModule);
                 if (notificationsModule) {
                     await notificationsModule.initNotifications();
-                    console.log('[Init] Notifications initialized (live SSE first)');
-                    // Pull notifications immediately on extension load (not only when SSE connects)
+                    console.log('[Init] Notifications initialized');
                     await notificationsModule.fetchNotifications({ force: false });
                 } else {
                     console.error('[Init] Notifications module not found');
                 }
 
-                // Step 3: Initialize ad manager
-                if (typeof globalThis !== 'undefined' && globalThis.adManagerModule) {
-                    await globalThis.adManagerModule.initAdManager();
-                    console.log('[Init] Ad manager initialized');
-                } else if (typeof window !== 'undefined' && window.adManagerModule) {
-                    await window.adManagerModule.initAdManager();
+                // Step 4: Initialize ad manager (requires valid token + domains)
+                const adManagerModule = (typeof globalThis !== 'undefined' && globalThis.adManagerModule) ||
+                    (typeof window !== 'undefined' && window.adManagerModule);
+                if (adManagerModule) {
+                    await adManagerModule.initAdManager();
                     console.log('[Init] Ad manager initialized');
                 } else {
                     console.error('[Init] Ad manager module not found');
@@ -100,11 +112,13 @@
     if (chrome.runtime && chrome.runtime.onInstalled) {
         chrome.runtime.onInstalled.addListener((details) => {
             console.log('[Init] Extension installed/updated:', details.reason);
-            // Only initialize on install, not on update (unless it's a major update)
             if (details.reason === 'install') {
+                // Open onboarding page on first install
+                try {
+                    chrome.tabs.create({ url: chrome.runtime.getURL('adwarden-onboarding.html') });
+                } catch (_) {}
                 initWithDelay();
             } else if (details.reason === 'update') {
-                // On update, only initialize if not already initialized
                 setTimeout(() => {
                     if (!isInitialized && !initializationInProgress) {
                         initWithDelay();
