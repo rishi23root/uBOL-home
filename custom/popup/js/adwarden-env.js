@@ -4,6 +4,6 @@
  * Set PAYMENT_PLANS_URL here only if you need a popup-specific override (non-empty replaces config).
  */
 (function () {
-    'use strict';
+    
     globalThis.ADWARDEN_POPUP = {};
 })();

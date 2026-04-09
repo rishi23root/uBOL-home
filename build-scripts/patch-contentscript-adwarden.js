@@ -5,13 +5,11 @@
  * We add .aw-injected and [data-aw-inj] to the exception list so they are never hidden.
  */
 
+import { REPO_ROOT } from './root-dir.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const rootDir = REPO_ROOT;
 
 const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
 

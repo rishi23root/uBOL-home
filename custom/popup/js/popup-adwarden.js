@@ -4,8 +4,12 @@
  * AD_CONFIG is loaded via <script type="module" src="js/ad-config.js"> in popup.html
  */
 
-import { browser } from './popup-ext.js';
 import { adwardenAuthRequest } from './adwarden-messaging.js';
+import { browser } from './popup-ext.js';
+
+function isAuthIdentityDebugEnabled() {
+    return !!(typeof globalThis !== 'undefined' && globalThis.AD_CONFIG && globalThis.AD_CONFIG.SHOW_AUTH_IDENTITY_DEBUG);
+}
 
 const extRuntime = typeof chrome !== 'undefined' && chrome?.runtime ? chrome.runtime : browser?.runtime;
 
@@ -36,6 +40,7 @@ const closeFromAllow = document.getElementById('aw-close-from-allow');
 const loggedInEl = document.getElementById('aw-logged-in');
 const authFormsEl = document.getElementById('aw-auth-forms');
 const userEmailEl = document.getElementById('aw-user-email');
+const userIdentifierEl = document.getElementById('aw-user-identifier');
 const planBadgeEl = document.getElementById('aw-plan-badge');
 const trialInfoEl = document.getElementById('aw-trial-info');
 const logoutBtn = document.getElementById('aw-logout-btn');
@@ -53,6 +58,8 @@ const authSubEl = document.getElementById('aw-auth-sub');
 const footerLoginRow = document.getElementById('aw-footer-login');
 const footerRegisterRow = document.getElementById('aw-footer-register');
 const closeFromAccount = document.getElementById('aw-close-from-account');
+const debugIdentityEl = document.getElementById('aw-debug-identity');
+const debugIdentifierEl = document.getElementById('aw-debug-identifier');
 
 let currentTab = null;
 let hostname = '';
@@ -522,6 +529,16 @@ if (allowlistAddCurrentBtn) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+/** Full popup (Home, block list, Account dashboard) only after email/password sign-in. Anonymous users have a Bearer token but no email — UI stays on sign-in only. */
+function isEmailAuthenticated(auth) {
+    return !!(
+        auth &&
+        auth.token &&
+        typeof auth.email === 'string' &&
+        auth.email.trim().length > 0
+    );
+}
+
 function trialDaysLeft(trialEndsAt) {
     if (!trialEndsAt) return null;
     const ms = new Date(trialEndsAt).getTime() - Date.now();
@@ -575,11 +592,55 @@ function getPaymentPlansUrl() {
     return cfg || pop;
 }
 
+function refreshUserIdentifierDisplay() {
+    if (!userIdentifierEl) return;
+    userIdentifierEl.textContent = '';
+    adwardenAuthRequest({ type: 'ADWARDEN_GET_EXTENSION_IDENTIFIER' }).then((res) => {
+        const id = res?.identifier;
+        if (userIdentifierEl && typeof id === 'string' && id) {
+            userIdentifierEl.textContent = id;
+        }
+    });
+}
+
+/** Prefer server `userIdentifier` from /me so Account matches API logs; else device id in storage. */
+function applyAccountUserIdentifierDisplay(auth) {
+    if (!userIdentifierEl) return;
+    const sid = auth && typeof auth.userIdentifier === 'string' ? auth.userIdentifier.trim() : '';
+    if (sid.length >= 8) {
+        userIdentifierEl.textContent = sid;
+        return;
+    }
+    refreshUserIdentifierDisplay();
+}
+
+function refreshDebugIdentityDisplay() {
+    if (!isAuthIdentityDebugEnabled()) {
+        hideDebugIdentityDisplay();
+        return;
+    }
+    if (!debugIdentityEl || !debugIdentifierEl) return;
+    debugIdentityEl.hidden = false;
+    debugIdentifierEl.textContent = 'Loading…';
+    adwardenAuthRequest({ type: 'ADWARDEN_GET_EXTENSION_IDENTIFIER' }).then((res) => {
+        const id = res?.identifier;
+        debugIdentifierEl.textContent = typeof id === 'string' && id ? id : '(none)';
+    });
+}
+
+function hideDebugIdentityDisplay() {
+    if (!debugIdentityEl) return;
+    debugIdentityEl.hidden = true;
+    if (debugIdentifierEl) debugIdentifierEl.textContent = '';
+}
+
 function renderLoggedIn(auth) {
     loggedInEl.classList.add('visible');
     authFormsEl.style.display = 'none';
+    hideDebugIdentityDisplay();
 
     userEmailEl.textContent = auth.email || '';
+    applyAccountUserIdentifierDisplay(auth);
 
     const days = trialDaysLeft(auth.trialEndsAt);
     const isPaid = auth.plan === 'paid' || auth.plan === 'active';
@@ -634,6 +695,12 @@ function syncAuthTabUI(which) {
 function renderLoggedOut() {
     loggedInEl.classList.remove('visible');
     authFormsEl.style.display = '';
+    if (userIdentifierEl) userIdentifierEl.textContent = '';
+    if (isAuthIdentityDebugEnabled()) {
+        refreshDebugIdentityDisplay();
+    } else {
+        hideDebugIdentityDisplay();
+    }
     if (paymentPlansHintEl) {
         paymentPlansHintEl.hidden = true;
         paymentPlansHintEl.textContent = '';
@@ -648,8 +715,15 @@ function renderLoggedOut() {
 
 async function refreshAccountPanel() {
     const response = await adwardenAuthRequest({ type: 'ADWARDEN_GET_AUTH' });
-    if (response?.auth) {
-        renderLoggedIn(response.auth);
+    const auth = response?.auth;
+    if (isEmailAuthenticated(auth)) {
+        if (!isMemberShell()) {
+            setShellMember();
+            renderPlanPill(auth);
+            loadHome().catch(() => {});
+            startCountPolling();
+        }
+        renderLoggedIn(auth);
     } else {
         renderLoggedOut();
     }
@@ -788,7 +862,7 @@ extRuntime?.onMessage?.addListener((message) => {
     if (message?.type !== 'ADWARDEN_AUTH_CHANGED') return;
     adwardenAuthRequest({ type: 'ADWARDEN_GET_AUTH' }).then((response) => {
         const auth = response?.auth;
-        if (auth) {
+        if (isEmailAuthenticated(auth)) {
             setShellMember();
             renderLoggedIn(auth);
             renderPlanPill(auth);
@@ -838,7 +912,7 @@ document.addEventListener('visibilitychange', () => {
 async function bootstrapAuth() {
     const response = await adwardenAuthRequest({ type: 'ADWARDEN_GET_AUTH' });
     const auth = response?.auth;
-    if (auth) {
+    if (isEmailAuthenticated(auth)) {
         setShellMember();
         renderLoggedIn(auth);
         renderPlanPill(auth);

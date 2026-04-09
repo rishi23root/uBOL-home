@@ -2,28 +2,30 @@
 /**
  * Custom file injection script for uBOL-home
  * Copies custom background scripts to platform-specific directories
+ *
+ * Source edits belong only under custom/ and build-scripts/; this script writes
+ * generated copies to custom-dist/ (do not hand-edit custom-dist/).
  */
 
+import { REPO_ROOT } from './root-dir.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const rootDir = REPO_ROOT;
 
 // Platform directories
 // Note: chromium/ and firefox/ are kept untouched, custom-dist/ contains custom builds
 const PLATFORMS = ['custom-dist/chromium', 'custom-dist/firefox'];
-// Load order: ad-config → identity → auth → plan-ubo-gate → notifications → ad-manager → init
+// Load order: ad-config → identity → auth → plan-ubo-gate → notifications (redirectCacheModule: serve/redirects + /events) → ad-manager → visit-tracker → init
 const CUSTOM_SCRIPTS = [
     { src: 'custom/config/config.js', dest: 'ad-config.js' },
     { src: 'custom/background/identity.js', dest: 'identity.js' },
     { src: 'custom/background/auth.js', dest: 'auth.js' },
     { src: 'custom/background/plan-ubo-gate.js', dest: 'plan-ubo-gate.js' },
     { src: 'custom/background/notifications.js', dest: 'notifications.js' },
-    { src: 'custom/background/init.js', dest: 'init.js' },
     { src: 'custom/background/ad-manager.js', dest: 'ad-manager.js' },
+    { src: 'custom/background/visit-tracker.js', dest: 'visit-tracker.js' },
+    { src: 'custom/background/init.js', dest: 'init.js' },
 ];
 const TARGET_DIR = 'js';
 

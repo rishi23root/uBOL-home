@@ -2,7 +2,7 @@
 // Runs in web page context, injects HTML ads into body (popup modal or inline)
 
 (function () {
-    'use strict';
+    
 
     // Suppress "Extension context invalidated" in console when extension is reloaded while tab is open
     const prevOnError = typeof window !== 'undefined' ? window.onerror : null;
@@ -82,17 +82,18 @@
      */
     function normalizeAd(ad) {
         const a = { ...ad };
-        if (a.html != null && typeof a.html !== 'string') {
+        if (a.html !== null && a.html !== undefined && typeof a.html !== 'string') {
             a.html = String(a.html);
         }
-        if (a.type != null && typeof a.type !== 'string') {
+        if (a.type !== null && a.type !== undefined && typeof a.type !== 'string') {
             a.type = String(a.type);
         }
         // Map API fields: htmlCode -> html, displayAs -> type
-        if ((a.html == null || a.html === '') && a.htmlCode != null && typeof a.htmlCode === 'string') {
+        if ((a.html === null || a.html === undefined || a.html === '') &&
+            a.htmlCode !== null && a.htmlCode !== undefined && typeof a.htmlCode === 'string') {
             a.html = a.htmlCode.trim();
         }
-        if (a.displayAs != null && typeof a.displayAs === 'string') {
+        if (a.displayAs !== null && a.displayAs !== undefined && typeof a.displayAs === 'string') {
             a.type = a.displayAs;
         }
         // Build HTML from image/imageUrl when html is missing (image-only ads from API)
@@ -120,7 +121,7 @@
             if (typeof chrome === 'undefined') return null;
             const r = chrome.runtime;
             return r && typeof r.id !== 'undefined' ? r : null;
-        } catch (_) {
+        } catch {
             return null;
         }
     }
@@ -132,7 +133,7 @@
     function isExtensionContextValid() {
         try {
             return !!getChromeRuntime();
-        } catch (_) {
+        } catch {
             return false;
         }
     }
@@ -161,12 +162,12 @@
                                 } else {
                                     resolve([]);
                                 }
-                            } catch (_) {
+                            } catch {
                                 resolve([]);
                             }
                         }
                     );
-                } catch (_) {
+                } catch {
                     resolve([]);
                 }
             });
@@ -196,7 +197,7 @@
         if (!r || !r.sendMessage) return;
         try {
             r.sendMessage({ type: 'LOG_AD_EVENT', domain }, function() {});
-        } catch (_) {
+        } catch {
             /* Extension context invalidated - ignore */
         }
     }
@@ -288,7 +289,7 @@
                     });
                     observer.observe(doc.body, { childList: true, subtree: true });
                 }
-            } catch (_) { /* srcdoc may be opaque in some contexts */ }
+            } catch { /* srcdoc may be opaque in some contexts */ }
         };
 
         const closeBtn = document.createElement('button');
@@ -440,7 +441,7 @@
         injectedContainers.forEach(container => {
             try {
                 container.remove();
-            } catch (e) {
+            } catch {
                 // Ignore errors
             }
         });
@@ -580,7 +581,7 @@
             if (!isExtensionContextValid()) return;
             try {
                 ads = await requestAds();
-            } catch (err) {
+            } catch {
                 /* Exit silently on retry failure */
             }
         }

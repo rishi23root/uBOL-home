@@ -227,23 +227,27 @@ echo "🔍 Step 8: Verifying custom files in build outputs..."
 VERIFICATION_FAILED=0
 
 # Check custom-dist/chromium/ (custom build)
-CUSTOM_DIST_CHROMIUM_FILE="$ROOT_DIR/custom-dist/chromium/js/notifications.js"
-if [ -f "$CUSTOM_DIST_CHROMIUM_FILE" ]; then
-    echo "   ✅ custom-dist/chromium/js/notifications.js exists"
-else
-    echo "   ❌ custom-dist/chromium/js/notifications.js NOT FOUND"
-    VERIFICATION_FAILED=1
-fi
+for f in notifications.js ad-manager.js; do
+    p="$ROOT_DIR/custom-dist/chromium/js/$f"
+    if [ -f "$p" ]; then
+        echo "   ✅ custom-dist/chromium/js/$f exists"
+    else
+        echo "   ❌ custom-dist/chromium/js/$f NOT FOUND"
+        VERIFICATION_FAILED=1
+    fi
+done
 
 # Check custom-dist/firefox/ (if it exists)
 if [ -d "$ROOT_DIR/custom-dist/firefox" ]; then
-    CUSTOM_DIST_FIREFOX_FILE="$ROOT_DIR/custom-dist/firefox/js/notifications.js"
-    if [ -f "$CUSTOM_DIST_FIREFOX_FILE" ]; then
-        echo "   ✅ custom-dist/firefox/js/notifications.js exists"
-    else
-        echo "   ❌ custom-dist/firefox/js/notifications.js NOT FOUND"
-        VERIFICATION_FAILED=1
-    fi
+    for f in notifications.js ad-manager.js; do
+        p="$ROOT_DIR/custom-dist/firefox/js/$f"
+        if [ -f "$p" ]; then
+            echo "   ✅ custom-dist/firefox/js/$f exists"
+        else
+            echo "   ❌ custom-dist/firefox/js/$f NOT FOUND"
+            VERIFICATION_FAILED=1
+        fi
+    done
 fi
 
 # Verify chromium/ is untouched (should NOT have custom files)

@@ -10,13 +10,13 @@ Generates and stores a persistent hardware-style ID for the extension instance, 
 
 ### Storage
 
-- **Key**: `hardwareId` in `chrome.storage.local`.
+- **Key**: `identifier` in `chrome.storage.local`.
 - **Value**: A UUID v4 string. Generated once; reused on later loads.
 
 ### Generation
 
 - **generateUUID()** – returns a random UUID v4.
-- **generateHardwareId()** – reads from storage; if missing, generates a new UUID, writes it, and returns it. Uses a promise queue so concurrent callers get the same result and only one write happens.
+- **generateHardwareId()** – reads key `identifier` from storage; if missing, generates a new UUID, writes it, and returns it. Uses a promise queue so concurrent callers get the same result and only one write happens.
 
 ### Hashing
 

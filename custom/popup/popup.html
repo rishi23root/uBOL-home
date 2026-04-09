@@ -122,7 +122,10 @@
 
       <div class="aw-logged-in" id="aw-logged-in">
         <div class="aw-user-row">
-          <span class="aw-user-email" id="aw-user-email"></span>
+          <div class="aw-user-ident-block">
+            <span class="aw-user-email" id="aw-user-email"></span>
+            <span class="aw-user-identifier" id="aw-user-identifier" title="Account identifier (matches API when available)" aria-label="Account identifier"></span>
+          </div>
           <span class="aw-plan-badge" id="aw-plan-badge">Trial</span>
         </div>
         <p class="aw-trial-info" id="aw-trial-info"></p>
@@ -144,6 +147,14 @@
         </div>
 
         <div id="aw-status" class="aw-status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+        <div class="aw-debug-identity" id="aw-debug-identity" hidden>
+          <div class="aw-debug-title">Debug — stored device identity</div>
+          <div class="aw-debug-row">
+            <span class="aw-debug-k">identifier (API / storage)</span>
+            <code class="aw-debug-v" id="aw-debug-identifier"></code>
+          </div>
+        </div>
 
         <form class="aw-form" id="form-login" autocomplete="on" aria-describedby="aw-status">
           <label class="aw-field aw-field-icon" for="login-email">

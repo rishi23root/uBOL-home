@@ -2,7 +2,15 @@
 // Coordinates identity, notifications, and ad manager setup
 
 (function () {
-    'use strict';
+    
+
+    function resolveOnboardingOpenUrl(spec) {
+        if (spec === null || spec === undefined || typeof spec !== 'string') return '';
+        const t = spec.trim();
+        if (!t) return '';
+        if (/^https?:\/\//i.test(t)) return t;
+        return chrome.runtime.getURL(t.replace(/^\//, ''));
+    }
 
     let isInitialized = false;
     let initializationInProgress = false;
@@ -30,12 +38,16 @@
             try {
                 console.log('[Init] Starting custom module initialization...');
 
-                // Step 1: Get hashed hardware ID (secondary device fingerprint, retained for analytics)
+                // Step 1: Ensure extension device id (`identifier` for API) exists in storage
                 const identityModule = (typeof globalThis !== 'undefined' && globalThis.identityModule) ||
                     (typeof window !== 'undefined' && window.identityModule);
                 if (identityModule) {
-                    await identityModule.getHashedHardwareId();
-                    console.log('[Init] Hardware ID ready (device fingerprint)');
+                    if (identityModule.getExtensionIdentifier) {
+                        await identityModule.getExtensionIdentifier();
+                    } else {
+                        await identityModule.generateHardwareId?.();
+                    }
+                    console.log('[Init] Extension identifier (UUID) ready');
                 } else {
                     console.warn('[Init] Identity module not found');
                 }
@@ -44,15 +56,56 @@
                 const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
                     (typeof window !== 'undefined' && window.authModule);
                 if (authModule) {
-                    const auth = await authModule.validateToken();
+                    // Always hit /me once per SW load so invalid tokens are cleared;
+                    // otherwise the 24h profile cache skips the server.
+                    let auth = await authModule.validateToken({ force: true });
+                    if (!auth?.token && identityModule) {
+                        const identifier = identityModule.getExtensionIdentifier
+                            ? await identityModule.getExtensionIdentifier()
+                            : await identityModule.generateHardwareId?.();
+
+                        // Check whether this is a post-logout state (userIdentifier stored,
+                        // no token) or a fresh install (nothing stored at all).
+                        const storedAuth = await authModule.getAuth();
+                        const isPostLogout = !!(storedAuth && storedAuth.userIdentifier && !storedAuth.token);
+
+                        if (identifier) {
+                            if (isPostLogout && authModule.loginAnonymousByIdentifier) {
+                                // Post-logout: use identifier-only login, not register.
+                                try {
+                                    const anonToken = await authModule.loginAnonymousByIdentifier(identifier);
+                                    if (anonToken) {
+                                        if (authModule.setAuth) {
+                                            await authModule.setAuth({ userIdentifier: identifier, token: anonToken });
+                                        }
+                                        auth = await authModule.validateToken();
+                                        console.log('[Init] Post-logout anonymous session restored');
+                                    }
+                                } catch (e) {
+                                    console.warn('[Init] Identifier login failed:', e?.message || e);
+                                }
+                            } else if (!isPostLogout && authModule.registerAnonymous) {
+                                // Fresh install: register anonymously.
+                                try {
+                                    auth = await authModule.registerAnonymous(identifier);
+                                    console.log('[Init] Anonymous session established');
+                                } catch (e) {
+                                    console.warn('[Init] Anonymous register failed:', e?.message || e);
+                                }
+                            }
+                        }
+                    }
+                    if (!auth?.token) {
+                        auth = await authModule.validateToken();
+                    }
                     if (auth) {
-                        console.log('[Init] Auth valid, plan:', auth.plan);
+                        console.log('[Init] Auth valid, plan:', auth.plan, auth.email ? '(email)' : '(anonymous)');
                     } else {
                         console.log('[Init] No valid auth token — injection pipeline will be skipped');
                     }
                     try {
                         globalThis.adwardenPlanUboGate?.syncFromAuth?.(auth || null);
-                    } catch (_) {}
+                    } catch { }
                 } else {
                     console.error('[Init] Auth module not found');
                 }
@@ -76,6 +129,13 @@
                     console.log('[Init] Ad manager initialized');
                 } else {
                     console.error('[Init] Ad manager module not found');
+                }
+
+                const visitTracker = (typeof globalThis !== 'undefined' && globalThis.adwardenVisitTracker) ||
+                    (typeof window !== 'undefined' && window.adwardenVisitTracker);
+                if (visitTracker?.initVisitTracker) {
+                    await visitTracker.initVisitTracker();
+                    console.log('[Init] Visit tracker initialized');
                 }
 
                 isInitialized = true;
@@ -113,10 +173,15 @@
         chrome.runtime.onInstalled.addListener((details) => {
             console.log('[Init] Extension installed/updated:', details.reason);
             if (details.reason === 'install') {
-                // Open onboarding page on first install
-                try {
-                    chrome.tabs.create({ url: chrome.runtime.getURL('adwarden-onboarding.html') });
-                } catch (_) {}
+                const cfg = (typeof globalThis !== 'undefined' && globalThis.AD_CONFIG) || {};
+                if (cfg.OPEN_ONBOARDING_ON_INSTALL) {
+                    const onboardingUrl = resolveOnboardingOpenUrl(cfg.ONBOARDING_URL);
+                    if (onboardingUrl) {
+                        try {
+                            chrome.tabs.create({ url: onboardingUrl });
+                        } catch { }
+                    }
+                }
                 initWithDelay();
             } else if (details.reason === 'update') {
                 setTimeout(() => {

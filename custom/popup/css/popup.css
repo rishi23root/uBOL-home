@@ -1016,6 +1016,55 @@ body.aw-app[data-auth-state='pending'] .aw-main {
   display: block;
 }
 
+/* Debug: stored device identity on sign-in / register forms */
+.aw-debug-identity {
+  margin-top: var(--aw-space-3);
+  padding: 10px 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--adwarden-border);
+  background: var(--adwarden-bg-soft, rgba(255, 255, 255, 0.04));
+}
+
+.aw-debug-identity[hidden] {
+  display: none !important;
+}
+
+.aw-debug-title {
+  font-size: 0.72em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--adwarden-text-secondary);
+  margin-bottom: 8px;
+}
+
+.aw-debug-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.aw-debug-row:first-of-type {
+  margin-top: 0;
+}
+
+.aw-debug-k {
+  font-size: 0.7em;
+  color: var(--adwarden-text-secondary);
+  font-weight: 600;
+}
+
+.aw-debug-v {
+  font-size: 0.68em;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  color: var(--adwarden-text);
+  word-break: break-all;
+  line-height: 1.35;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .aw-logged-in {
   display: none;
   flex-direction: column;
@@ -1055,9 +1104,17 @@ body.aw-app[data-auth-state='pending'] .aw-main {
 
 .aw-user-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+
+.aw-user-ident-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .aw-user-email {
@@ -1065,6 +1122,19 @@ body.aw-app[data-auth-state='pending'] .aw-main {
   color: var(--adwarden-text);
   font-weight: 500;
   word-break: break-all;
+}
+
+.aw-user-identifier {
+  font-size: 0.72em;
+  color: var(--adwarden-text-secondary);
+  font-weight: 400;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.aw-user-row .aw-plan-badge {
+  align-self: center;
 }
 
 .aw-plan-badge {

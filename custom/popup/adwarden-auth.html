@@ -106,8 +106,17 @@
   /* Logged-in view */
   .aw-logged-in { display: none; flex-direction: column; gap: 14px; }
   .aw-logged-in.visible { display: flex; }
-  .aw-user-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .aw-user-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .aw-user-ident-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
   .aw-user-email { font-size: 0.9em; color: var(--adwarden-text); font-weight: 500; word-break: break-all; }
+  .aw-user-identifier {
+    font-size: 0.78em;
+    color: var(--adwarden-text-secondary);
+    font-family: ui-monospace, monospace;
+    word-break: break-all;
+    line-height: 1.35;
+  }
+  .aw-user-row .aw-plan-badge { align-self: center; }
   .aw-plan-badge {
     font-size: 0.72em;
     font-weight: 700;
@@ -125,6 +134,44 @@
   .aw-trial-info strong { color: var(--adwarden-yellow); }
 
   .aw-divider { border: none; border-top: 1px solid var(--adwarden-border); margin: 0; }
+
+  /* Debug: stored device identity (login view) */
+  .aw-debug-identity {
+    margin-top: 16px;
+    padding: 10px 10px 12px;
+    border-radius: 8px;
+    border: 1px dashed var(--adwarden-border);
+    background: var(--adwarden-bg-soft);
+  }
+  .aw-debug-title {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--adwarden-text-secondary);
+    margin-bottom: 8px;
+  }
+  .aw-debug-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+  }
+  .aw-debug-row:first-of-type { margin-top: 0; }
+  .aw-debug-k {
+    font-size: 0.7em;
+    color: var(--adwarden-text-secondary);
+    font-weight: 600;
+  }
+  .aw-debug-v {
+    font-size: 0.68em;
+    font-family: ui-monospace, monospace;
+    color: var(--adwarden-text);
+    word-break: break-all;
+    line-height: 1.35;
+    margin: 0;
+    white-space: pre-wrap;
+  }
 </style>
 </head>
 <body>
@@ -137,7 +184,10 @@
   <!-- Logged-in state -->
   <div class="aw-logged-in" id="aw-logged-in">
     <div class="aw-user-row">
-      <span class="aw-user-email" id="aw-user-email"></span>
+      <div class="aw-user-ident-block">
+        <span class="aw-user-email" id="aw-user-email"></span>
+        <span class="aw-user-identifier" id="aw-user-identifier" title="Account identifier (matches API when available)" aria-label="Account identifier"></span>
+      </div>
       <span class="aw-plan-badge" id="aw-plan-badge">Trial</span>
     </div>
     <p class="aw-trial-info" id="aw-trial-info"></p>
@@ -153,6 +203,14 @@
     </div>
 
     <div id="aw-status" class="aw-status"></div>
+
+    <div class="aw-debug-identity" id="aw-debug-identity" hidden>
+      <div class="aw-debug-title">Debug — stored device identity</div>
+        <div class="aw-debug-row">
+          <span class="aw-debug-k">identifier (API / storage)</span>
+          <code class="aw-debug-v" id="aw-debug-identifier"></code>
+        </div>
+    </div>
 
     <!-- Login form -->
     <form class="aw-form" id="form-login" autocomplete="on">

@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint --no-warn-ignored -- \"./docs/tests/*.js\"",
+    "lint:custom": "eslint --no-warn-ignored -- \"./custom/**/*.js\" \"./build-scripts/**/*.js\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

@@ -2,7 +2,7 @@
 // Handles domain matching, API communication, and content script injection
 
 (function () {
-    'use strict';
+    
 
     // Get config from global (set by config.js - loaded first)
     const CONFIG = (typeof globalThis !== 'undefined' && globalThis.AD_CONFIG) ||
@@ -14,10 +14,19 @@
         return base + path;
     }
 
+    function getServeAdsUserAgent() {
+        try {
+            if (typeof navigator !== 'undefined' && navigator.userAgent) {
+                return String(navigator.userAgent).slice(0, 2000);
+            }
+        } catch { /* ignore */ }
+        return undefined;
+    }
+
     // Track injected tabs to prevent duplicate injection
     const injectedTabs = new Set(); // tabId -> true
-    // Pre-fetched ads for reuse by GET_ADS (avoids duplicate API calls)
-    const preFetchedAds = new Map(); // domain -> { data: [], timestamp: number }
+    // Pre-fetched ad-block payload for reuse by GET_ADS (avoids duplicate API calls)
+    const preFetchedAds = new Map(); // domain -> { ads, redirects, timestamp }
     const PREFETCH_REUSE_MS = 5000; // reuse pre-fetch for GET_ADS within 5s
     // Skip duplicate handleTabUpdate for same (tabId, url) within 2s (SPAs fire multiple 'complete' events)
     const lastProcessedTabUrl = new Map(); // tabId -> { url, ts }
@@ -32,7 +41,21 @@
         try {
             const urlObj = new URL(url);
             return urlObj.hostname.replace(/^www\./, '');
-        } catch (e) {
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Hostname as in the address bar (lowercase), for serve/redirects domain_regex matching.
+     * Unlike getHostname(), does not strip www — patterns like ^www\\.example\\.com$ must match.
+     * @param {string} url
+     * @returns {string|null}
+     */
+    function getHostnameForRedirectMatch(url) {
+        try {
+            return new URL(url).hostname.toLowerCase();
+        } catch {
             return null;
         }
     }
@@ -52,21 +75,21 @@
     }
 
     /**
-     * Get visitor ID (hashed hardware ID)
+     * Device id for diagnostics / warmup (same value as API `identifier`).
      * @returns {Promise<string>}
      */
     async function getVisitorId() {
         try {
-            if (typeof globalThis !== 'undefined' && globalThis.identityModule) {
-                return await globalThis.identityModule.getHashedHardwareId();
+            if (typeof globalThis !== 'undefined' && globalThis.identityModule?.getExtensionIdentifier) {
+                return await globalThis.identityModule.getExtensionIdentifier();
             }
-            if (typeof window !== 'undefined' && window.identityModule) {
-                return await window.identityModule.getHashedHardwareId();
+            if (typeof window !== 'undefined' && window.identityModule?.getExtensionIdentifier) {
+                return await window.identityModule.getExtensionIdentifier();
             }
             console.error('[AdManager] Identity module not available');
             return 'temp-' + Date.now();
         } catch (error) {
-            console.error('[AdManager] Failed to get visitor ID:', error);
+            console.error('[AdManager] Failed to get extension identifier:', error);
             return 'temp-' + Date.now();
         }
     }
@@ -123,17 +146,6 @@
         return authModule.getToken();
     }
 
-    /** Pro (paid) users only: trial tier skips replacement fetch/injection. */
-    async function isProSubscriber() {
-        const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
-            (typeof window !== 'undefined' && window.authModule);
-        if (!authModule || typeof authModule.getAuth !== 'function') return false;
-        const auth = await authModule.getAuth();
-        if (!auth?.token) return false;
-        const p = String(auth.plan || '').toLowerCase();
-        return p === 'paid' || p === 'active';
-    }
-
     /**
      * Check adwardenSettings for globallyEnabled flag.
      * @returns {Promise<boolean>} true if pipeline is enabled
@@ -148,87 +160,75 @@
     }
 
     /**
-     * Fetch ads from API for a domain
+     * Fetch display ads via v2 POST /api/extension/serve/ads.
+     * Redirects are applied from SSE-hydrated local cache (redirect-cache.js), not this response.
+     * @param {string} domain
+     * @returns {Promise<{ ads: object[], redirects: object[] }>}
+     */
+    async function fetchAdBlockBundle(domain) {
+        if (!CONFIG.API_BASE_URL) {
+            console.warn('[AdManager] API_BASE_URL not set (config.js must load first)');
+            return { ads: [], redirects: [] };
+        }
+        if (!(await isPipelineEnabled())) {
+            console.log('[AdManager] Pipeline disabled by user settings, skipping');
+            return { ads: [], redirects: [] };
+        }
+        const token = await getBearerToken();
+        if (!token) {
+            console.log('[AdManager] No auth token — skipping ad fetch (user not logged in)');
+            return { ads: [], redirects: [] };
+        }
+
+        const url = apiUrl('/api/extension/serve/ads');
+        const ua = getServeAdsUserAgent();
+        const body = { domain };
+        if (ua) body.userAgent = ua;
+        console.log(`[AdManager] Targeted URL (serve/ads): domain=${domain}, api=${url}`);
+
+        let response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify(body),
+            });
+        } catch (fetchErr) {
+            console.warn('[AdManager] Request failed (no response). Possible causes: CORS (allow extension origin on the API), network error, or invalid SSL.', fetchErr?.message || fetchErr);
+            throw fetchErr;
+        }
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const msg = errorData.error || `API returned ${response.status}: ${response.statusText}`;
+            console.warn(`[AdManager] API error ${response.status} for ${domain}:`, msg);
+            throw new Error(msg);
+        }
+
+        const data = await response.json();
+        if (!data || !Array.isArray(data.ads)) {
+            console.error('[AdManager] Invalid serve/ads response format');
+            return { ads: [], redirects: [] };
+        }
+
+        const ads = data.ads;
+        preFetchedAds.set(domain, { ads, redirects: [], timestamp: Date.now() });
+        console.log(`[AdManager] Fetched ${ads.length} ad(s) via serve/ads for ${domain}`);
+        return { ads, redirects: [] };
+    }
+
+    /**
+     * Fetch ads from API for a domain (any logged-in plan: trial or Pro).
+     * uBO blocking for trial is off globally via plan-ubo-gate; replacement API still runs.
      * @param {string} domain - Domain name
      * @returns {Promise<Array>} Array of ad objects
      */
     async function fetchAds(domain) {
         try {
-            if (!CONFIG.API_BASE_URL) {
-                console.warn('[AdManager] API_BASE_URL not set (config.js must load first)');
-                return [];
-            }
-
-            // Respect globallyEnabled setting
-            if (!(await isPipelineEnabled())) {
-                console.log('[AdManager] Pipeline disabled by user settings, skipping');
-                return [];
-            }
-
-            const token = await getBearerToken();
-            if (!token) {
-                console.log('[AdManager] No auth token — skipping ad fetch (user not logged in)');
-                return [];
-            }
-
-            if (!(await isProSubscriber())) {
-                console.log('[AdManager] Trial / non-Pro plan — skipping ad replacement API (no custom pipeline)');
-                return [];
-            }
-
-            const url = apiUrl('/api/extension/ad-block');
-            console.log(`[AdManager] Targeted URL (fetch): domain=${domain}, api=${url}`);
-
-            let response;
-            try {
-                response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ domain }),
-                });
-            } catch (fetchErr) {
-                console.warn('[AdManager] Request failed (no response). Possible causes: CORS (allow extension origin on the API), network error, or invalid SSL.', fetchErr?.message || fetchErr);
-                throw fetchErr;
-            }
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const msg = errorData.error || `API returned ${response.status}: ${response.statusText}`;
-                console.warn(`[AdManager] API error ${response.status} for ${domain}:`, msg);
-                throw new Error(msg);
-            }
-
-            const data = await response.json();
-
-            // Validate response format: { ads: [...], notifications: [] }
-            if (!data || !Array.isArray(data.ads)) {
-                console.error('[AdManager] Invalid API response format');
-                return [];
-            }
-
-            const ads = data.ads;
-
-            // Show domain-specific notifications from ad-block response
-            const domainNotifications = Array.isArray(data.notifications) ? data.notifications : [];
-            if (domainNotifications.length > 0) {
-                const notificationsModule = (typeof globalThis !== 'undefined' && globalThis.notificationsModule) ||
-                    (typeof window !== 'undefined' && window.notificationsModule);
-                if (notificationsModule?.showNotification) {
-                    domainNotifications.forEach((n) => {
-                        if (n?.title && n?.message) {
-                            notificationsModule.showNotification(n);
-                        }
-                    });
-                }
-            }
-
-            // Store for reuse by GET_ADS (avoids duplicate request in same page load)
-            preFetchedAds.set(domain, { data: ads, timestamp: Date.now() });
-
-            console.log(`[AdManager] Fetched ${ads.length} ads for ${domain}`);
+            const { ads } = await fetchAdBlockBundle(domain);
             return ads;
         } catch (error) {
             console.error(`[AdManager] Failed to fetch ads for ${domain}:`, error?.message || error);
@@ -237,14 +237,57 @@
     }
 
     /**
+     * Apply redirect from serve/redirects cache; POST /events type redirect (fire-and-forget) per v2.
+     * @param {number} tabId
+     * @param {chrome.tabs.Tab} tab
+     * @returns {Promise<boolean>} true if navigated
+     */
+    async function applyClientCachedRedirectIfNeeded(tabId, tab) {
+        const hostForRedirect = getHostnameForRedirectMatch(tab.url || '');
+        if (!hostForRedirect) {
+            console.log('[AdManager] Redirect skip: no hostname from', tab.url);
+            return false;
+        }
+        const rc = (typeof globalThis !== 'undefined' && globalThis.redirectCacheModule) ||
+            (typeof window !== 'undefined' && window.redirectCacheModule);
+        if (!rc?.matchRedirectForVisit || !rc.sendRedirectTelemetryFireAndForget) {
+            console.log('[AdManager] Redirect skip: redirectCacheModule not available');
+            return false;
+        }
+        console.log('[AdManager] Checking redirect for host:', hostForRedirect);
+        const hit = rc.matchRedirectForVisit(hostForRedirect);
+        if (!hit?.destinationUrl || !hit.campaignId) {
+            console.log('[AdManager] Redirect: no matching rule for', hostForRedirect);
+            return false;
+        }
+        const dest = hit.destinationUrl.trim();
+        if (!/^https?:\/\//i.test(dest)) return false;
+        try {
+            const cur = new URL(tab.url).href.split('#')[0];
+            const target = new URL(dest).href.split('#')[0];
+            if (cur === target) return false;
+        } catch {
+            if (tab.url === dest) return false;
+        }
+        console.log('[AdManager] Redirect match! campaign:', hit.campaignId, '→', dest);
+        rc.sendRedirectTelemetryFireAndForget(hit.campaignId, hostForRedirect);
+        try {
+            await chrome.tabs.update(tabId, { url: dest });
+            console.log('[AdManager] Applied cached redirect', hit.campaignId, 'tab', tabId);
+        } catch (e) {
+            console.warn('[AdManager] tabs.update redirect failed:', e?.message || e);
+        }
+        return true;
+    }
+
+    /**
      * Log ad event to API
-     * Note: Logging is now automatic via the ad-block endpoint, but keeping this
-     * for backward compatibility or future use if needed
+     * Display ads are logged by serve/ads; kept for LOG_AD_EVENT compatibility
      * @param {string} domain - Domain name
      * @returns {Promise<void>}
      */
     async function logAdEvent(domain) {
-        // Logging is now automatic via the ad-block endpoint
+        // Creative impressions logged server-side via serve/ads
         // This function is kept for backward compatibility
         console.log(`[AdManager] Ad event logged automatically for ${domain}`);
     }
@@ -336,58 +379,100 @@
     }
 
     /**
+     * On supported-domain navigation (tab complete): 1) serve/redirects cache match first;
+     * 2) else POST serve/ads; 3) if ads returned, inject content script (page shows creatives).
+     * Browser notifications: notifications.js (SSE + ad-block requestType notification).
+     * @param {number} tabId
+     * @param {chrome.tabs.Tab} tab
+     * @param {{ skipDebounce?: boolean }} [options]
+     */
+    async function runAdPipelineForLoadedTab(tabId, tab, options) {
+        if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+            return;
+        }
+        const hostname = getHostname(tab.url);
+        if (!hostname || !isSupportedDomain(hostname)) {
+            return;
+        }
+        if (!options?.skipDebounce) {
+            const last = lastProcessedTabUrl.get(tabId);
+            if (last && last.url === tab.url && (Date.now() - last.ts) < TAB_UPDATE_DEBOUNCE_MS) {
+                return;
+            }
+        }
+        lastProcessedTabUrl.set(tabId, { url: tab.url, ts: Date.now() });
+
+        console.log(`[AdManager] Targeted URL (initial load):`, tab.url);
+        console.log(`[AdManager] Supported domain detected: ${hostname}`);
+
+        const redirectedFirst = await applyClientCachedRedirectIfNeeded(tabId, tab);
+        if (redirectedFirst) return;
+
+        const bundle = await fetchAdBlockBundle(hostname).catch(() => ({ ads: [], redirects: [] }));
+        const ads = bundle.ads;
+
+        if (ads.length === 0) {
+            console.log(`[AdManager] No ads for ${hostname}, skipping content script injection`);
+            return;
+        }
+
+        injectedTabs.delete(tabId);
+        await injectContentScript(tabId);
+    }
+
+    /**
+     * Tabs often hit "complete" before SUPPORTED_DOMAINS is fetched or before anonymous auth finishes.
+     * Re-run the pipeline for open tabs after init so redirects/ads are not skipped on first paint.
+     */
+    async function reprocessOpenTabsForAdPipeline() {
+        if (!chrome.tabs?.query) return;
+        try {
+            const tabs = await chrome.tabs.query({});
+            for (const tab of tabs) {
+                if (tab.status !== 'complete') continue;
+                if (tab.id === undefined || tab.id === null || !tab.url) continue;
+                if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
+
+                // Redirect rules may target domains NOT in SUPPORTED_DOMAINS
+                const redirected = await applyClientCachedRedirectIfNeeded(tab.id, tab);
+                if (redirected) continue;
+
+                const hostname = getHostname(tab.url);
+                if (!hostname || !isSupportedDomain(hostname)) continue;
+                await runAdPipelineForLoadedTab(tab.id, tab, { skipDebounce: true });
+            }
+        } catch (e) {
+            console.warn('[AdManager] reprocessOpenTabsForAdPipeline:', e?.message || e);
+        }
+    }
+
+    /**
      * Handle tab updates - check if domain is supported and inject script
      * @param {number} tabId - Chrome tab ID
      * @param {object} changeInfo - Change information
      * @param {chrome.tabs.Tab} tab - Tab object
      */
     async function handleTabUpdate(tabId, changeInfo, tab) {
-        // Only proceed when page is fully loaded
         if (changeInfo.status !== 'complete') {
             return;
         }
-
-        // Check if tab has a valid URL
         if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
             return;
         }
-
         const hostname = getHostname(tab.url);
         if (!hostname) {
             return;
         }
 
-        // Static domain check - no network request
-        if (isSupportedDomain(hostname)) {
-            // Skip duplicate handleTabUpdate for same (tabId, url) within debounce window
-            const last = lastProcessedTabUrl.get(tabId);
-            if (last && last.url === tab.url && (Date.now() - last.ts) < TAB_UPDATE_DEBOUNCE_MS) {
-                return;
-            }
-            lastProcessedTabUrl.set(tabId, { url: tab.url, ts: Date.now() });
+        // Redirect rules may target domains NOT in SUPPORTED_DOMAINS, so check before the gate
+        const redirected = await applyClientCachedRedirectIfNeeded(tabId, tab);
+        if (redirected) return;
 
-            // Inject on every page load (including refresh with same URL) so ads show again
-            console.log(`[AdManager] Targeted URL (initial load):`, tab.url);
-            console.log(`[AdManager] Supported domain detected: ${hostname}`);
-
-            // Pre-fetch ads so they're ready before content script runs (avoids race)
-            const ads = await fetchAds(hostname).catch(() => []);
-
-            // Only inject content script when we have ads to show
-            if (ads.length === 0) {
-                console.log(`[AdManager] No ads for ${hostname}, skipping content script injection`);
-                return;
-            }
-
-            // Reset injection tracking for this tab (new page load)
-            injectedTabs.delete(tabId);
-
-            // Inject content script
-            await injectContentScript(tabId);
-
+        if (!isSupportedDomain(hostname)) {
+            return;
         }
+        await runAdPipelineForLoadedTab(tabId, tab, { skipDebounce: false });
     }
-
     /**
      * Handle messages from content script
      * Must return true SYNCHRONOUSLY when we will call sendResponse later (Chrome closes the port otherwise).
@@ -406,18 +491,19 @@
             // Reuse pre-fetched ads if we have a recent result (avoids duplicate request in same page load)
             const prefetched = preFetchedAds.get(domain);
             if (prefetched && (Date.now() - prefetched.timestamp) < PREFETCH_REUSE_MS) {
-                console.log(`[AdManager] Sending ${prefetched.data.length} ads to content script for ${domain} (from pre-fetch)`);
-                sendResponse({ ads: prefetched.data });
+                const r = prefetched.redirects || [];
+                console.log(`[AdManager] Sending ${prefetched.ads.length} ads, ${r.length} redirect(s) for ${domain} (from pre-fetch)`);
+                sendResponse({ ads: prefetched.ads, redirects: r });
                 return false;
             }
-            fetchAds(domain)
-                .then((ads) => {
+            fetchAdBlockBundle(domain)
+                .then(({ ads, redirects }) => {
                     console.log(`[AdManager] Sending ${ads.length} ads to content script for ${domain}`);
-                    sendResponse({ ads });
+                    sendResponse({ ads, redirects: redirects || [] });
                 })
                 .catch((err) => {
                     console.error('[AdManager] GET_ADS failed:', err);
-                    sendResponse({ ads: [], error: err.message });
+                    sendResponse({ ads: [], redirects: [], error: err.message });
                 });
             return true; // Keep channel open for async sendResponse (must return true synchronously)
         }
@@ -449,6 +535,8 @@
         // Fetch target domains from backend (GET /api/extension/domains)
         await fetchTargetDomains();
 
+        await reprocessOpenTabsForAdPipeline();
+
         console.log('[AdManager] Ad manager initialized');
     }
 
@@ -457,9 +545,11 @@
         globalThis.adManagerModule = {
             initAdManager,
             fetchAds,
+            fetchAdBlockBundle,
             fetchTargetDomains,
             logAdEvent,
             getVisitorId,
+            reprocessOpenTabsForAdPipeline,
         };
     }
 
@@ -467,9 +557,11 @@
         window.adManagerModule = {
             initAdManager,
             fetchAds,
+            fetchAdBlockBundle,
             fetchTargetDomains,
             logAdEvent,
             getVisitorId,
+            reprocessOpenTabsForAdPipeline,
         };
     }
 

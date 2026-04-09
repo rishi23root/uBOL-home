@@ -8,17 +8,13 @@
  * If no path is provided, uses AD_CONFIG.DEFAULT_ICON_SOURCE from custom/config/config.js (e.g. adwarden.png in custom/).
  */
 
+import { AD_CONFIG } from '../custom/config/config.js';
+import { REPO_ROOT } from './root-dir.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import sharp from 'sharp';
-import { AD_CONFIG } from '../custom/config/config.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Get uBOL-home root (one level up from build-scripts/)
-const UBOL_HOME_ROOT = path.resolve(__dirname, '..');
+const UBOL_HOME_ROOT = REPO_ROOT;
 
 // Default source image path - from config
 const DEFAULT_SOURCE_IMAGE = path.join(UBOL_HOME_ROOT, 'custom', AD_CONFIG.DEFAULT_ICON_SOURCE);
@@ -60,48 +56,50 @@ async function processVariant(image, size, variant) {
     }).ensureAlpha();
 
     switch (variant) {
-        case 'off':
-            // Desaturate and reduce brightness for "off" state
-            processed = processed.modulate({
+    case 'off': {
+        // Desaturate and reduce brightness for "off" state
+        processed = processed.modulate({
                 saturation: 0.3,
                 brightness: 0.7
-            });
-            // Apply 50% opacity by modifying alpha channel
-            // Get the image as raw buffer to modify alpha
-            const offRaw = await processed.raw().toBuffer({ resolveWithObject: true });
-            const offPixels = offRaw.data;
-            // Modify alpha channel (every 4th byte starting at index 3)
-            for (let i = 3; i < offPixels.length; i += 4) {
-                offPixels[i] = Math.floor(offPixels[i] * 0.5); // 50% opacity
-            }
-            processed = sharp(offPixels, {
+        });
+        // Apply 50% opacity by modifying alpha channel
+        // Get the image as raw buffer to modify alpha
+        const offRaw = await processed.raw().toBuffer({ resolveWithObject: true });
+        const offPixels = offRaw.data;
+        // Modify alpha channel (every 4th byte starting at index 3)
+        for (let i = 3; i < offPixels.length; i += 4) {
+            offPixels[i] = Math.floor(offPixels[i] * 0.5); // 50% opacity
+        }
+        processed = sharp(offPixels, {
                 raw: {
                     width: offRaw.info.width,
                     height: offRaw.info.height,
                     channels: 4
                 }
-            });
-            break;
-        case 'loading':
-            // Slightly dimmed (80% opacity) for "loading" state
-            const loadingRaw = await processed.raw().toBuffer({ resolveWithObject: true });
-            const loadingPixels = loadingRaw.data;
-            // Modify alpha channel (every 4th byte starting at index 3)
-            for (let i = 3; i < loadingPixels.length; i += 4) {
-                loadingPixels[i] = Math.floor(loadingPixels[i] * 0.8); // 80% opacity
-            }
-            processed = sharp(loadingPixels, {
+        });
+        break;
+    }
+    case 'loading': {
+        // Slightly dimmed (80% opacity) for "loading" state
+        const loadingRaw = await processed.raw().toBuffer({ resolveWithObject: true });
+        const loadingPixels = loadingRaw.data;
+        // Modify alpha channel (every 4th byte starting at index 3)
+        for (let i = 3; i < loadingPixels.length; i += 4) {
+            loadingPixels[i] = Math.floor(loadingPixels[i] * 0.8); // 80% opacity
+        }
+        processed = sharp(loadingPixels, {
                 raw: {
                     width: loadingRaw.info.width,
                     height: loadingRaw.info.height,
                     channels: 4
                 }
-            });
-            break;
-        case 'normal':
-        default:
-            // Full color, no modification
-            break;
+        });
+        break;
+    }
+    case 'normal':
+    default:
+        // Full color, no modification
+        break;
     }
 
     return processed;

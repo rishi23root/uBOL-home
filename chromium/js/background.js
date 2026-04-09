@@ -767,3 +767,16 @@ browser.commands.onCommand.addListener((...args) => {
         onCommand(...args);
     });
 });
+
+// Direct access for same-SW modules (Ad Warden plan-ubo-gate.js) that cannot use sendMessage to self.
+globalThis.adwardenUboGetFilteringModeDetails = async function() {
+    await isFullyInitialized;
+    return getFilteringModeDetails(true);
+};
+
+globalThis.adwardenUboSetFilteringModeDetails = async function(modes) {
+    await isFullyInitialized;
+    await setFilteringModeDetails(modes);
+    registerInjectables();
+    return getFilteringModeDetails(true);
+};

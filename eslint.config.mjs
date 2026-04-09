@@ -14,6 +14,14 @@ export default [ includeIgnoreFile(gitignorePath), {
     files: ["**/*.js", "**/*.mjs"],
     ...js.configs.recommended,
 }, {
+    files: ["build-scripts/**/*.js"],
+    languageOptions: {
+        globals: {
+            ...globals.node,
+        },
+        sourceType: "module",
+    },
+}, {
     files: ["**/*.js", "**/*.mjs"],
     languageOptions: {
         globals: {

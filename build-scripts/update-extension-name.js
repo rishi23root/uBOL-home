@@ -6,15 +6,11 @@
  *   node update-extension-name.js
  */
 
+import { REPO_ROOT } from './root-dir.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Get uBOL-home root
-const UBOL_HOME_ROOT = path.resolve(__dirname, '..');
+const UBOL_HOME_ROOT = REPO_ROOT;
 
 const EXT_NAME = 'Ad Warden';
 const EXT_SHORT_DESC = 'Content blocker for ads and trackers.';
@@ -79,7 +75,7 @@ function updateMessages(filePath) {
             const oldDesc = messages.extShortDesc.message;
             messages.extShortDesc.message = EXT_SHORT_DESC;
             updated = true;
-            changes.push(`extShortDesc updated`);
+            changes.push(`extShortDesc: ${oldDesc} → ${EXT_SHORT_DESC}`);
         }
 
         if (messages.strictblockSentence1 && messages.strictblockSentence1.message) {

@@ -1,0 +1,18 @@
+---
+alwaysApply: false
+description: Ad Warden (uBOL-home custom) — guest vs Pro filtering and SW pitfalls
+---
+
+# Ad Warden extension (this repo)
+
+When changing **guest / trial / Pro** behavior or uBO filtering:
+
+1. **Read** [custom/ADWARDEN-HANDOFF.md](custom/ADWARDEN-HANDOFF.md) for full context.
+
+2. **`plan-ubo-gate.js`** — Guest/trial forces `{ none: ['all-urls'], basic: [], optimal: [], complete: [] }` and backs up the full mode graph for Pro restore. Do not rely on `setFilteringMode('all-urls', 0)` alone (per-host overrides win in `lookupFilteringMode`).
+
+3. **Service worker Messaging** — Custom code in the background SW must **not** use `chrome.runtime.sendMessage` to talk to the same SW. Use `globalThis.adwardenUboGetFilteringModeDetails` / `adwardenUboSetFilteringModeDetails` defined at the end of `chromium/js/background.js`, and the dual path in `plan-ubo-gate.js`.
+
+4. **Auth** — `notifyAuthChange` awaits `syncFromAuth` on logout/login.
+
+5. **Build** — After edits, run inject/build so `custom-dist` or packaged `background.js` matches `chromium/js/background.js`.

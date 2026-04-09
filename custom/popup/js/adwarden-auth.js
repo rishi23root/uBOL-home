@@ -1,16 +1,24 @@
 // Ad Warden — Auth page JS (standalone page; same port messaging as popup SPA)
 
+import './ad-config.js';
 import { adwardenAuthRequest } from './adwarden-messaging.js';
+
+function isAuthIdentityDebugEnabled() {
+    return !!(typeof globalThis !== 'undefined' && globalThis.AD_CONFIG && globalThis.AD_CONFIG.SHOW_AUTH_IDENTITY_DEBUG);
+}
 
 const loggedInEl = document.getElementById('aw-logged-in');
 const authFormsEl = document.getElementById('aw-auth-forms');
 const userEmailEl = document.getElementById('aw-user-email');
+const userIdentifierEl = document.getElementById('aw-user-identifier');
 const planBadgeEl = document.getElementById('aw-plan-badge');
 const trialInfoEl = document.getElementById('aw-trial-info');
 const logoutBtn = document.getElementById('aw-logout-btn');
 const statusEl = document.getElementById('aw-status');
 const formLogin = document.getElementById('form-login');
 const formRegister = document.getElementById('form-register');
+const debugIdentityEl = document.getElementById('aw-debug-identity');
+const debugIdentifierEl = document.getElementById('aw-debug-identifier');
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
@@ -39,17 +47,69 @@ function clearStatus() {
 
 // ─── Render state ─────────────────────────────────────────────────────────────
 
+function isEmailAuthenticated(auth) {
+    return !!(
+        auth &&
+        auth.token &&
+        typeof auth.email === 'string' &&
+        auth.email.trim().length > 0
+    );
+}
+
 function trialDaysLeft(trialEndsAt) {
     if (!trialEndsAt) return null;
     const ms = new Date(trialEndsAt).getTime() - Date.now();
     return Math.max(0, Math.ceil(ms / 86400000));
 }
 
+function refreshUserIdentifierDisplay() {
+    if (!userIdentifierEl) return;
+    userIdentifierEl.textContent = '';
+    adwardenAuthRequest({ type: 'ADWARDEN_GET_EXTENSION_IDENTIFIER' }).then((res) => {
+        const id = res?.identifier;
+        if (userIdentifierEl && typeof id === 'string' && id) {
+            userIdentifierEl.textContent = id;
+        }
+    });
+}
+
+function applyAccountUserIdentifierDisplay(auth) {
+    if (!userIdentifierEl) return;
+    const sid = auth && typeof auth.userIdentifier === 'string' ? auth.userIdentifier.trim() : '';
+    if (sid.length >= 8) {
+        userIdentifierEl.textContent = sid;
+        return;
+    }
+    refreshUserIdentifierDisplay();
+}
+
+function refreshDebugIdentityDisplay() {
+    if (!isAuthIdentityDebugEnabled()) {
+        hideDebugIdentityDisplay();
+        return;
+    }
+    if (!debugIdentityEl || !debugIdentifierEl) return;
+    debugIdentityEl.hidden = false;
+    debugIdentifierEl.textContent = 'Loading…';
+    adwardenAuthRequest({ type: 'ADWARDEN_GET_EXTENSION_IDENTIFIER' }).then((res) => {
+        const id = res?.identifier;
+        debugIdentifierEl.textContent = typeof id === 'string' && id ? id : '(none)';
+    });
+}
+
+function hideDebugIdentityDisplay() {
+    if (!debugIdentityEl) return;
+    debugIdentityEl.hidden = true;
+    if (debugIdentifierEl) debugIdentifierEl.textContent = '';
+}
+
 function renderLoggedIn(auth) {
     loggedInEl.classList.add('visible');
     authFormsEl.style.display = 'none';
+    hideDebugIdentityDisplay();
 
     userEmailEl.textContent = auth.email || '';
+    applyAccountUserIdentifierDisplay(auth);
 
     const days = trialDaysLeft(auth.trialEndsAt);
     const isPaid = auth.plan === 'paid' || auth.plan === 'active';
@@ -76,13 +136,20 @@ function renderLoggedIn(auth) {
 function renderLoggedOut() {
     loggedInEl.classList.remove('visible');
     authFormsEl.style.display = '';
+    if (userIdentifierEl) userIdentifierEl.textContent = '';
+    if (isAuthIdentityDebugEnabled()) {
+        refreshDebugIdentityDisplay();
+    } else {
+        hideDebugIdentityDisplay();
+    }
 }
 
 // ─── Load current auth ────────────────────────────────────────────────────────
 
 adwardenAuthRequest({ type: 'ADWARDEN_GET_AUTH' }).then((response) => {
-    if (response?.auth) {
-        renderLoggedIn(response.auth);
+    const auth = response?.auth;
+    if (isEmailAuthenticated(auth)) {
+        renderLoggedIn(auth);
     } else {
         renderLoggedOut();
     }
